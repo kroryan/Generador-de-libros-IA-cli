@@ -19,7 +19,7 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo")
 OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "")  # Para servicios compatibles con OpenAI
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "sk-a9ffcccbcf024fe6a36186eab981ba7d")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")  # Valores posibles: deepseek-chat, deepseek-reasoner
 DEEPSEEK_API_BASE = "https://api.deepseek.com"
 

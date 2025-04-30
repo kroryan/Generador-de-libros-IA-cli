@@ -10,6 +10,10 @@ class WriterChain(BaseEventChain):
     - Integren elementos de fantasía y tecnología
     - Mantengan un ritmo narrativo fluido
     - Sean coherentes con el estilo y tono del libro
+    IMPORTANTE: Todo el contenido narrativo debe estar EXCLUSIVAMENTE en español. 
+    Todo el texto, diálogos, nombres de personajes, lugares, objetos, términos técnicos 
+    o mágicos y cualquier otro elemento narrativo DEBE estar en español. 
+    NO uses términos, expresiones o nombres en otros idiomas bajo ninguna circunstancia.
 
     Género: {genre}
     Estilo: {style}

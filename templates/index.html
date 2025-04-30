@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberNovelist AI - Generador de Libros</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.0/socket.io.js"></script>
+</head>
+<body>
+    <div class="scanner-overlay"></div>
+    <div class="noise-overlay"></div>
+    
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="icon-glow"></div>
+                <h1><span class="glitch" data-text="CYBERNOVELIST">CYBERNOVELIST</span> AI</h1>
+                <div class="tagline">GENERADOR NEURAL DE NARRATIVAS</div>
+            </div>
+        </header>
+        
+        <main>
+            <div class="panel control-panel">
+                <div class="panel-header">
+                    <h2>PARÁMETROS DE GENERACIÓN</h2>
+                    <div class="panel-controls">
+                        <span class="control"></span>
+                        <span class="control"></span>
+                        <span class="control"></span>
+                    </div>
+                </div>
+                
+                <form id="generate-form">
+                    <div class="form-group">
+                        <label for="model">MODELO IA:</label>
+                        <select id="model" name="model">
+                            {% for model in models %}
+                                <option value="{{ model }}">{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" id="refresh-models" class="small-button">
+                            <span class="button-content">ACTUALIZAR</span>
+                        </button>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="subject">TEMA DEL LIBRO:</label>
+                        <textarea id="subject" name="subject" rows="4" placeholder="Escribe el tema de tu libro...">El tema del libro es una aventura épica que combina fantasía y ciencia ficción. La historia se desarrolla en un universo donde la magia compleja coexiste con la tecnología avanzada, permitiendo viajes espaciales en naves impulsadas tanto por energía mágica como por tecnología futurista. Los personajes exploran mundos misteriosos, enfrentando desafíos que requieren tanto el dominio de antiguos hechizos como la comprensión de avanzados sistemas tecnológicos.</textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="profile">PERFIL DE LA HISTORIA:</label>
+                        <textarea id="profile" name="profile" rows="4" placeholder="Escribe el perfil de tu historia...">Esta novela fusiona elementos de fantasía épica y ciencia ficción espacial, creando un universo único donde la magia ancestral y la tecnología avanzada se entrelazan de formas sorprendentes. La historia está dirigida a lectores que disfrutan de mundos complejos donde los límites entre la magia y la ciencia se desdibujan. A través de una narrativa inmersiva, la obra explora temas como el poder, la aventura, el descubrimiento y la coexistencia de diferentes formas de conocimiento.</textarea>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group half">
+                            <label for="style">ESTILO NARRATIVO:</label>
+                            <select id="style" name="style">
+                                <option value="Narrativo-Épico-Imaginativo">Narrativo-Épico-Imaginativo</option>
+                                <option value="Descriptivo-Detallado-Literario">Descriptivo-Detallado-Literario</option>
+                                <option value="Directo-Ágil-Conversacional">Directo-Ágil-Conversacional</option>
+                                <option value="Poético-Reflexivo-Profundo">Poético-Reflexivo-Profundo</option>
+                                <option value="Técnico-Preciso-Científico">Técnico-Preciso-Científico</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group half">
+                            <label for="genre">GÉNERO:</label>
+                            <select id="genre" name="genre">
+                                <option value="Fantasía y Ciencia Ficción">Fantasía y Ciencia Ficción</option>
+                                <option value="Ciencia Ficción Pura">Ciencia Ficción Pura</option>
+                                <option value="Fantasía Épica">Fantasía Épica</option>
+                                <option value="Cyberpunk">Cyberpunk</option>
+                                <option value="Distopía Futurista">Distopía Futurista</option>
+                                <option value="Space Opera">Space Opera</option>
+                                <option value="Realismo Mágico">Realismo Mágico</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="settings-section">
+                        <div class="settings-header">
+                            <span class="expand-icon">+</span>
+                            <h3>OPCIONES DE EXPORTACIÓN</h3>
+                        </div>
+                        
+                        <div class="settings-content" style="display: none;">
+                            <div class="form-row">
+                                <div class="form-group half">
+                                    <label for="output-format">FORMATO:</label>
+                                    <div class="format-selector">
+                                        <label class="format-option">
+                                            <input type="radio" name="output-format" value="docx" checked>
+                                            <span class="format-label">DOCX</span>
+                                        </label>
+                                        <label class="format-option">
+                                            <input type="radio" name="output-format" value="pdf">
+                                            <span class="format-label">PDF</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div class="form-group half">
+                                    <label for="output-path">RUTA:</label>
+                                    <input type="text" id="output-path" name="output-path" value="./docs" placeholder="Ruta para guardar el libro...">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="button" id="generate-button" class="cyber-button">
+                        <span class="button-content">GENERAR LIBRO</span>
+                        <span class="button-glitch"></span>
+                    </button>
+                </form>
+            </div>
+            
+            <div class="panel output-panel">
+                <div class="panel-header">
+                    <h2>PROGRESO DE GENERACIÓN</h2>
+                    <div class="panel-controls">
+                        <span class="control"></span>
+                        <span class="control"></span>
+                        <span class="control"></span>
+                    </div>
+                </div>
+                
+                <div class="generation-status">
+                    <div class="status-item">
+                        <div class="status-label">Estado:</div>
+                        <div id="status" class="status-value">Esperando entrada...</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Título:</div>
+                        <div id="title" class="status-value">-</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Progreso:</div>
+                        <div class="progress-container">
+                            <div id="progress-bar" class="progress-bar"></div>
+                            <div id="progress-text" class="progress-text">0%</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tabs-container">
+                    <div class="tabs">
+                        <button class="tab-button active" data-tab="overview">RESUMEN</button>
+                        <button class="tab-button" data-tab="thoughts">PENSAMIENTOS</button>
+                        <button class="tab-button" data-tab="results">RESULTADOS</button>
+                    </div>
+                    
+                    <div id="tab-overview" class="tab-content active">
+                        <div id="overview-log" class="cyberpunk-terminal"></div>
+                    </div>
+                    
+                    <div id="tab-thoughts" class="tab-content">
+                        <div id="thoughts-log" class="cyberpunk-terminal thinking-terminal"></div>
+                    </div>
+                    
+                    <div id="tab-results" class="tab-content">
+                        <div id="results-log" class="cyberpunk-terminal result-terminal"></div>
+                    </div>
+                </div>
+                
+                <div id="download-container" style="display: none;">
+                    <a id="download-link" class="cyber-button">
+                        <span class="button-content">DESCARGAR LIBRO</span>
+                        <span class="button-glitch"></span>
+                    </a>
+                </div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>© 2025 CyberNovelist AI - Generador de Realidades Narrativas</p>
+        </footer>
+    </div>
+
+    <script>
+        // Configuración de Socket.IO
+        const socket = io();
+        
+        // Referencias a elementos del DOM
+        const statusElement = document.getElementById('status');
+        const titleElement = document.getElementById('title');
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const overviewLog = document.getElementById('overview-log');
+        const thoughtsLog = document.getElementById('thoughts-log');
+        const resultsLog = document.getElementById('results-log');
+        const downloadContainer = document.getElementById('download-container');
+        const downloadLink = document.getElementById('download-link');
+        const modelSelector = document.getElementById('model');
+        const refreshModelsButton = document.getElementById('refresh-models');
+        
+        // Configuración de opciones de exportación
+        const settingsHeaders = document.querySelectorAll('.settings-header');
+        settingsHeaders.forEach(header => {
+            header.addEventListener('click', function() {
+                const content = this.nextElementSibling;
+                const icon = this.querySelector('.expand-icon');
+                
+                if (content.style.display === 'none' || !content.style.display) {
+                    content.style.display = 'block';
+                    icon.textContent = '-';
+                } else {
+                    content.style.display = 'none';
+                    icon.textContent = '+';
+                }
+            });
+        });
+        
+        // Variables para acumular texto y evitar fragmentación
+        let currentThinkingMsg = null;
+        let currentResultMsg = null;
+        let lastThinkingId = 0;
+        let lastResultId = 0;
+        
+        // Event listener para el botón de actualización de modelos
+        refreshModelsButton.addEventListener('click', function() {
+            addOverviewMessage("> Actualizando lista de modelos disponibles...");
+            axios.get('/models')
+                .then(response => {
+                    const models = response.data.models;
+                    modelSelector.innerHTML = '';  // Limpiar opciones actuales
+                    
+                    models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelector.appendChild(option);
+                    });
+                    
+                    addOverviewMessage(`> ${models.length} modelos encontrados.`);
+                })
+                .catch(error => {
+                    console.error(error);
+                    addOverviewMessage('> Error al actualizar la lista de modelos.');
+                });
+        });
+        
+        // Event listeners para las pestañas
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', function() {
+                // Desactivar todas las pestañas
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                
+                // Activar la pestaña seleccionada
+                this.classList.add('active');
+                document.getElementById('tab-' + this.dataset.tab).classList.add('active');
+            });
+        });
+        
+        // Event listener para el botón de generación
+        document.getElementById('generate-button').addEventListener('click', function() {
+            const subject = document.getElementById('subject').value;
+            const profile = document.getElementById('profile').value;
+            const style = document.getElementById('style').value;
+            const genre = document.getElementById('genre').value;
+            const model = document.getElementById('model').value;
+            
+            // Obtener el formato seleccionado
+            const outputFormat = document.querySelector('input[name="output-format"]:checked').value;
+            // Obtener la ruta de salida
+            const outputPath = document.getElementById('output-path').value || './docs';
+            
+            // Limpiar logs previos
+            overviewLog.innerHTML = '';
+            thoughtsLog.innerHTML = '';
+            resultsLog.innerHTML = '';
+            
+            // Reiniciar variables de acumulación
+            currentThinkingMsg = null;
+            currentResultMsg = null;
+            lastThinkingId = 0;
+            lastResultId = 0;
+            
+            // Ocultar botón de descarga
+            downloadContainer.style.display = 'none';
+            
+            // Actualizar UI inicial
+            addOverviewMessage('> Iniciando proceso de generación del libro...');
+            addOverviewMessage(`> Modelo seleccionado: ${model}`);
+            addOverviewMessage(`> Formato de salida: ${outputFormat.toUpperCase()}`);
+            addOverviewMessage(`> Directorio de salida: ${outputPath}`);
+            
+            // Enviar solicitud al servidor
+            axios.post('/generate', { 
+                subject, 
+                profile, 
+                style, 
+                genre, 
+                model,
+                outputFormat,
+                outputPath
+            })
+                .then(response => {
+                    console.log(response.data);
+                })
+                .catch(error => {
+                    console.error(error);
+                    statusElement.textContent = 'Error al iniciar la generación';
+                    addOverviewMessage('> Error: No se pudo iniciar el proceso de generación.');
+                });
+        });
+        
+        // Función para añadir mensajes al log de resumen
+        function addOverviewMessage(message) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'log-message';
+            messageElement.textContent = message;
+            overviewLog.appendChild(messageElement);
+            overviewLog.scrollTop = overviewLog.scrollHeight;
+        }
+        
+        // Función para añadir o actualizar mensajes de pensamiento
+        function handleThinkingMessage(message, type) {
+            // Asegurar que las palabras no estén separadas
+            message = message.replace(/\s+/g, ' ').trim();
+            
+            // Si es un nuevo bloque de pensamiento
+            if (type === 'start') {
+                lastThinkingId++;
+                const messageElement = document.createElement('div');
+                messageElement.className = 'thinking-message';
+                messageElement.textContent = message;
+                messageElement.dataset.thinkingId = lastThinkingId;
+                thoughtsLog.appendChild(messageElement);
+                currentThinkingMsg = messageElement;
+            } 
+            // Si es continuación de un bloque existente
+            else if (type === 'content' && currentThinkingMsg) {
+                // Acumular texto en lugar de crear un nuevo elemento
+                if (message.trim()) {
+                    currentThinkingMsg.textContent += ' ' + message;
+                }
+            }
+            // Si es el final de un bloque
+            else if (type === 'end') {
+                if (currentThinkingMsg && message.trim()) {
+                    currentThinkingMsg.textContent += ' ' + message;
+                }
+                currentThinkingMsg = null;
+            }
+            // Si perdimos el contexto o es un mensaje suelto
+            else {
+                lastThinkingId++;
+                const messageElement = document.createElement('div');
+                messageElement.className = 'thinking-message';
+                messageElement.textContent = message;
+                messageElement.dataset.thinkingId = lastThinkingId;
+                thoughtsLog.appendChild(messageElement);
+                currentThinkingMsg = messageElement;
+            }
+            
+            thoughtsLog.scrollTop = thoughtsLog.scrollHeight;
+        }
+        
+        // Función para añadir o actualizar mensajes de resultado
+        function handleResultMessage(message) {
+            // Asegurar que las palabras no estén separadas
+            message = message.replace(/\s+/g, ' ').trim();
+            
+            // Si el mensaje es parte de un resultado existente
+            if (currentResultMsg && currentResultMsg.textContent.length < 500) {
+                // Acumular texto en lugar de crear un nuevo elemento
+                if (message.trim()) {
+                    currentResultMsg.textContent += ' ' + message;
+                }
+            } 
+            // Si es un nuevo resultado o el actual es muy largo
+            else {
+                lastResultId++;
+                const messageElement = document.createElement('div');
+                messageElement.className = 'result-message';
+                messageElement.textContent = message;
+                messageElement.dataset.resultId = lastResultId;
+                resultsLog.appendChild(messageElement);
+                currentResultMsg = messageElement;
+            }
+            
+            resultsLog.scrollTop = resultsLog.scrollHeight;
+        }
+        
+        // Eventos de Socket.IO
+        socket.on('connect', () => {
+            console.log('Conectado al servidor');
+        });
+        
+        // Actualización del estado de generación
+        socket.on('status_update', (data) => {
+            console.log('Estado actualizado:', data);
+            
+            // Actualizar información de estado
+            statusElement.textContent = data.current_step;
+            if (data.title) {
+                titleElement.textContent = data.title;
+            }
+            
+            // Actualizar barra de progreso
+            progressBar.style.width = data.progress + '%';
+            progressText.textContent = data.progress + '%';
+            
+            // Añadir mensaje al log de resumen
+            addOverviewMessage(`> ${data.current_step}`);
+            
+            // Mostrar botón de descarga si el libro está listo
+            if (data.book_ready) {
+                downloadContainer.style.display = 'block';
+                downloadLink.href = '/download/' + data.file_path;
+                addOverviewMessage('> El libro está listo para descargar.');
+            }
+            
+            // Manejar errores
+            if (data.error) {
+                addOverviewMessage(`> Error: ${data.error}`);
+            }
+        });
+        
+        // Actualización de pensamientos
+        socket.on('thinking_update', (data) => {
+            console.log('Pensamiento:', data);
+            handleThinkingMessage(data.data, data.type);
+        });
+        
+        // Actualización de resultados
+        socket.on('result_update', (data) => {
+            console.log('Resultado:', data);
+            handleResultMessage(data.data);
+        });
+    </script>
+</body>
+</html>

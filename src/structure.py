@@ -5,6 +5,7 @@ class TitleChain(BaseStructureChain):
     Genera un título atractivo y original para esta novela de fantasía y ciencia ficción.
     El título debe capturar la esencia de la historia y ser memorable.
     Devuelve solo el título, sin explicaciones adicionales.
+    IMPORTANTE: El título debe estar EXCLUSIVAMENTE en español. No uses palabras en otros idiomas.
 
     Tema del libro: {subject}
     Género del libro: {genre}
@@ -31,6 +32,8 @@ class FrameworkChain(BaseStructureChain):
     3. Los personajes principales y sus motivaciones
     4. La estructura general de la trama
     5. Los temas principales a explorar
+    IMPORTANTE: Todo el contenido debe estar EXCLUSIVAMENTE en español. Todos los nombres de personajes, 
+    lugares, elementos mágicos y tecnológicos deben estar en español o ser adaptados al español.
 
     Tema: {subject}
     Género: {genre}
@@ -59,6 +62,8 @@ class ChaptersChain(BaseStructureChain):
     Capítulo 1: [breve descripción]
     ...
     Epílogo: [breve descripción]
+    IMPORTANTE: Los títulos y descripciones de TODOS los capítulos deben estar EXCLUSIVAMENTE en español. 
+    Todos los nombres, lugares y conceptos mencionados deben estar en español.
 
     Tema: {subject}
     Género: {genre}

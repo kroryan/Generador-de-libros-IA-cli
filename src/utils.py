@@ -1,16 +1,38 @@
 from langchain.chains import LLMChain
 from langchain_community.chat_models import ChatOllama
+from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 import sys
 import time
 import re
+import os
 
 # Códigos ANSI para colores
 YELLOW = "\033[93m"
 WHITE = "\033[97m"
 PURPLE = "\033[95m"
 RESET = "\033[0m"
+
+# Configuración de modelos
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo")
+OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "")  # Para servicios compatibles con OpenAI
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "sk-a9ffcccbcf024fe6a36186eab981ba7d")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")  # Valores posibles: deepseek-chat, deepseek-reasoner
+DEEPSEEK_API_BASE = "https://api.deepseek.com"
+
+def extract_content_from_llm_response(response):
+    """Extrae el contenido de texto de diferentes tipos de respuestas LLM"""
+    if hasattr(response, 'content'):  # Para AIMessage, HumanMessage, etc.
+        return response.content
+    elif isinstance(response, dict) and "text" in response:  # Para diccionarios con clave 'text'
+        return response["text"]
+    elif isinstance(response, str):  # Para respuestas en texto plano
+        return response
+    else:  # Para cualquier otro tipo, convertir a string
+        return str(response)
 
 class ColoredStreamingCallbackHandler(StreamingStdOutCallbackHandler):
     def __init__(self):
@@ -75,20 +97,87 @@ def clean_think_tags(text):
     cleaned = cleaned.strip()
     return cleaned
 
+def get_llm_model(callbacks=None):
+    """
+    Selecciona el modelo LLM a utilizar basado en la configuración disponible.
+    Prioridad: 
+    1. Ollama (si OLLAMA_MODEL no está vacío)
+    2. DeepSeek (si DEEPSEEK_API_KEY está disponible)
+    3. OpenAI o API compatible (si OPENAI_API_KEY está disponible)
+    """
+    if callbacks is None:
+        callbacks = [ColoredStreamingCallbackHandler()]
+    
+    # Parámetros comunes para todos los modelos
+    common_params = {
+        "callbacks": callbacks,
+        "temperature": 0.7,
+        "streaming": True,
+    }
+    
+    # Primero intentar con Ollama si hay un modelo especificado
+    if OLLAMA_MODEL and OLLAMA_MODEL.strip():
+        try:
+            print_progress(f"Utilizando modelo Ollama: {OLLAMA_MODEL}")
+            return ChatOllama(
+                model=OLLAMA_MODEL,
+                **common_params,
+                top_k=50,
+                top_p=0.9,
+                repeat_penalty=1.1
+            )
+        except Exception as e:
+            print_progress(f"Error al inicializar Ollama: {str(e)}")
+    
+    # Luego intentar con DeepSeek si hay una API key
+    if DEEPSEEK_API_KEY and DEEPSEEK_API_KEY.strip():
+        try:
+            print_progress(f"Utilizando modelo DeepSeek: {DEEPSEEK_MODEL}")
+            # Usar ChatOpenAI con la configuración de DeepSeek
+            # El parámetro correcto es base_url, no api_base
+            return ChatOpenAI(
+                api_key=DEEPSEEK_API_KEY,
+                base_url=DEEPSEEK_API_BASE,
+                model=DEEPSEEK_MODEL,
+                **common_params
+            )
+        except Exception as e:
+            print_progress(f"Error al inicializar DeepSeek: {str(e)}")
+    
+    # Finalmente intentar con OpenAI o compatible si hay una API key
+    if OPENAI_API_KEY and OPENAI_API_KEY.strip():
+        try:
+            openai_params = {**common_params, "model": OPENAI_MODEL, "api_key": OPENAI_API_KEY}
+            
+            # Si se ha especificado una API base alternativa (compatible con OpenAI)
+            if OPENAI_API_BASE and OPENAI_API_BASE.strip():
+                # También usamos base_url en lugar de api_base para mantener consistencia
+                openai_params["base_url"] = OPENAI_API_BASE
+                print_progress(f"Utilizando API compatible con OpenAI: {OPENAI_MODEL} (Base: {OPENAI_API_BASE})")
+            else:
+                print_progress(f"Utilizando modelo OpenAI: {OPENAI_MODEL}")
+                
+            return ChatOpenAI(**openai_params)
+        except Exception as e:
+            print_progress(f"Error al inicializar OpenAI: {str(e)}")
+    
+    # Si no se pudo inicializar ningún modelo, volver a intentar con Ollama en modo de error
+    print_progress("No se pudo inicializar ninguno de los modelos configurados. Intentando con Ollama por defecto...")
+    return ChatOllama(
+        model="llama2",  # Modelo básico que probablemente esté disponible
+        **common_params,
+        top_k=50,
+        top_p=0.9,
+        repeat_penalty=1.1
+    )
+
 class BaseChain:
     PROMPT_TEMPLATE = ""
     MAX_RETRIES = 3
     TIMEOUT = 60
 
     def __init__(self) -> None:
-        self.llm = ChatOllama(
-            model="hf.co/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF:Q4_K_M",
-            callbacks=[ColoredStreamingCallbackHandler()],
-            temperature=0.7,
-            top_k=50,
-            top_p=0.9,
-            repeat_penalty=1.1
-        )
+        self.llm = get_llm_model()
         
         # Crear el prompt template desde la cadena de texto
         self.prompt = PromptTemplate(
@@ -122,9 +211,17 @@ class BaseChain:
                 start_time = time.time()
                 result = self.chain(kwargs)
                 
-                if result and "text" in result and result["text"].strip():
-                    # Limpiar las cadenas de pensamiento antes de devolver el resultado
-                    return clean_think_tags(result["text"].strip())
+                if result:
+                    # Usar la función para extraer contenido independientemente del formato
+                    if "text" in result:
+                        text_content = extract_content_from_llm_response(result["text"])
+                        if text_content and text_content.strip():
+                            return clean_think_tags(text_content.strip())
+                    else:
+                        # Manejar caso donde result no tiene una clave "text"
+                        text_content = extract_content_from_llm_response(result)
+                        if text_content and text_content.strip():
+                            return clean_think_tags(text_content.strip())
                 
                 raise ValueError("La respuesta del modelo está vacía")
                 

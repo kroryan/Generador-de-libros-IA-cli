@@ -1,4 +1,4 @@
-from utils import BaseEventChain, print_progress, clean_think_tags
+from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response
 
 class ChapterFrameworkChain(BaseEventChain):
     PROMPT_TEMPLATE = """
@@ -8,6 +8,8 @@ class ChapterFrameworkChain(BaseEventChain):
     - Desarrollo de personajes
     - Elementos mágicos/tecnológicos relevantes
     - Conflictos y resoluciones
+    IMPORTANTE: Todo el contenido del marco debe estar EXCLUSIVAMENTE en español. Todos los nombres, lugares, 
+    elementos mágicos, tecnológicos y conceptos deben estar en español. No utilices ningún término en otro idioma.
 
     Elementos narrativos a considerar:
     {features}
@@ -43,7 +45,9 @@ class ChapterFrameworkChain(BaseEventChain):
         
         try:
             # Generar features usando el mismo modelo y limpiar resultado
-            features = clean_think_tags(self.llm.invoke("Genera una lista breve de elementos narrativos clave para una historia de fantasía y ciencia ficción."))
+            # Usar la función para extraer el contenido de AIMessage
+            features_response = self.llm.invoke("Genera una lista breve de elementos narrativos clave para una historia de fantasía y ciencia ficción. IMPORTANTE: Todos los elementos deben estar EXCLUSIVAMENTE en español.")
+            features = clean_think_tags(extract_content_from_llm_response(features_response))
             
             # Limpiar todas las entradas
             outline = "\n".join(
@@ -84,6 +88,8 @@ class IdeasChain(BaseEventChain):
     - Elementos mágicos/tecnológicos
     - Desarrollo de personajes
     - Conexiones con la historia general
+    IMPORTANTE: Todas las ideas deben estar EXCLUSIVAMENTE en español. Todos los nombres, lugares, elementos 
+    mágicos, tecnológicos y conceptos deben estar en español. No utilices ningún término en otro idioma.
 
     Tema: {subject}
     Género: {genre}

@@ -118,3 +118,6 @@ OPENAI_MODEL=gpt-4
 - ✅ Generación de imágenes
 
 ---
+
+
+Si por alguna razon quereis contactarme podeis hacerlo entrando a este discord, mi nombre es allen en el discord; https://discord.gg/TTmrXaeXM8

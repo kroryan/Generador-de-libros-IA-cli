@@ -39,7 +39,7 @@
                         <label for="model">MODELO IA:</label>
                         <select id="model" name="model">
                             {% for model in models %}
-                                <option value="{{ model }}">{{ model }}</option>
+                                <option value="{{ model.value }}">{{ model.display_name }}</option>
                             {% endfor %}
                         </select>
                         <button type="button" id="refresh-models" class="small-button">
@@ -151,20 +151,15 @@
                 <div class="tabs-container">
                     <div class="tabs">
                         <button class="tab-button active" data-tab="overview">RESUMEN</button>
-                        <button class="tab-button" data-tab="thoughts">PENSAMIENTOS</button>
-                        <button class="tab-button" data-tab="results">RESULTADOS</button>
+                        <button class="tab-button" data-tab="results">GENERACIÓN</button>
                     </div>
                     
                     <div id="tab-overview" class="tab-content active">
                         <div id="overview-log" class="cyberpunk-terminal"></div>
                     </div>
                     
-                    <div id="tab-thoughts" class="tab-content">
-                        <div id="thoughts-log" class="cyberpunk-terminal thinking-terminal"></div>
-                    </div>
-                    
                     <div id="tab-results" class="tab-content">
-                        <div id="results-log" class="cyberpunk-terminal result-terminal"></div>
+                        <div id="results-log" class="cyberpunk-terminal"></div>
                     </div>
                 </div>
                 
@@ -192,7 +187,6 @@
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
         const overviewLog = document.getElementById('overview-log');
-        const thoughtsLog = document.getElementById('thoughts-log');
         const resultsLog = document.getElementById('results-log');
         const downloadContainer = document.getElementById('download-container');
         const downloadLink = document.getElementById('download-link');
@@ -216,12 +210,6 @@
             });
         });
         
-        // Variables para acumular texto y evitar fragmentación
-        let currentThinkingMsg = null;
-        let currentResultMsg = null;
-        let lastThinkingId = 0;
-        let lastResultId = 0;
-        
         // Event listener para el botón de actualización de modelos
         refreshModelsButton.addEventListener('click', function() {
             addOverviewMessage("> Actualizando lista de modelos disponibles...");
@@ -232,8 +220,8 @@
                     
                     models.forEach(model => {
                         const option = document.createElement('option');
-                        option.value = model;
-                        option.textContent = model;
+                        option.value = model.value;
+                        option.textContent = model.display_name;
                         modelSelector.appendChild(option);
                     });
                     
@@ -273,14 +261,7 @@
             
             // Limpiar logs previos
             overviewLog.innerHTML = '';
-            thoughtsLog.innerHTML = '';
             resultsLog.innerHTML = '';
-            
-            // Reiniciar variables de acumulación
-            currentThinkingMsg = null;
-            currentResultMsg = null;
-            lastThinkingId = 0;
-            lastResultId = 0;
             
             // Ocultar botón de descarga
             downloadContainer.style.display = 'none';
@@ -320,72 +301,101 @@
             overviewLog.scrollTop = overviewLog.scrollHeight;
         }
         
-        // Función para añadir o actualizar mensajes de pensamiento
-        function handleThinkingMessage(message, type) {
-            // Asegurar que las palabras no estén separadas
-            message = message.replace(/\s+/g, ' ').trim();
-            
-            // Si es un nuevo bloque de pensamiento
-            if (type === 'start') {
-                lastThinkingId++;
-                const messageElement = document.createElement('div');
-                messageElement.className = 'thinking-message';
-                messageElement.textContent = message;
-                messageElement.dataset.thinkingId = lastThinkingId;
-                thoughtsLog.appendChild(messageElement);
-                currentThinkingMsg = messageElement;
-            } 
-            // Si es continuación de un bloque existente
-            else if (type === 'content' && currentThinkingMsg) {
-                // Acumular texto en lugar de crear un nuevo elemento
-                if (message.trim()) {
-                    currentThinkingMsg.textContent += ' ' + message;
-                }
-            }
-            // Si es el final de un bloque
-            else if (type === 'end') {
-                if (currentThinkingMsg && message.trim()) {
-                    currentThinkingMsg.textContent += ' ' + message;
-                }
-                currentThinkingMsg = null;
-            }
-            // Si perdimos el contexto o es un mensaje suelto
-            else {
-                lastThinkingId++;
-                const messageElement = document.createElement('div');
-                messageElement.className = 'thinking-message';
-                messageElement.textContent = message;
-                messageElement.dataset.thinkingId = lastThinkingId;
-                thoughtsLog.appendChild(messageElement);
-                currentThinkingMsg = messageElement;
-            }
-            
-            thoughtsLog.scrollTop = thoughtsLog.scrollHeight;
-        }
+        // Variables para gestionar los mensajes y evitar fragmentación
+        let currentThinkingBlock = null;
+        let currentResultBlock = null;
+        let lastMessageType = null;
+        let inThinkingMode = false;
         
-        // Función para añadir o actualizar mensajes de resultado
-        function handleResultMessage(message) {
-            // Asegurar que las palabras no estén separadas
-            message = message.replace(/\s+/g, ' ').trim();
+        // Función para añadir mensajes al log de resultados
+        function addMessage(message, type) {
+            // Determinar si crear un nuevo bloque o actualizar uno existente
+            let messageElement;
             
-            // Si el mensaje es parte de un resultado existente
-            if (currentResultMsg && currentResultMsg.textContent.length < 500) {
-                // Acumular texto en lugar de crear un nuevo elemento
-                if (message.trim()) {
-                    currentResultMsg.textContent += ' ' + message;
-                }
-            } 
-            // Si es un nuevo resultado o el actual es muy largo
-            else {
-                lastResultId++;
-                const messageElement = document.createElement('div');
-                messageElement.className = 'result-message';
+            // Manejar el cambio de modo de pensamiento
+            if (type === 'start') {
+                inThinkingMode = true;
+                lastMessageType = 'thinking';
+                messageElement = document.createElement('div');
+                messageElement.className = 'thinking-message';
                 messageElement.textContent = message;
-                messageElement.dataset.resultId = lastResultId;
                 resultsLog.appendChild(messageElement);
-                currentResultMsg = messageElement;
+                currentThinkingBlock = messageElement;
+                currentResultBlock = null;
+            } 
+            else if (type === 'end') {
+                inThinkingMode = false;
+                // Si tenemos un bloque de pensamiento actual, actualizarlo
+                if (currentThinkingBlock) {
+                    if (message && message.trim()) {
+                        currentThinkingBlock.textContent += ' ' + message;
+                    }
+                }
+                currentThinkingBlock = null;
+                lastMessageType = null;
+            }
+            else if (type === 'content' && inThinkingMode) {
+                // Añadir al bloque de pensamiento actual o crear uno nuevo
+                if (currentThinkingBlock) {
+                    if (message && message.trim()) {
+                        if (!currentThinkingBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
+                            currentThinkingBlock.textContent += ' ';
+                        }
+                        currentThinkingBlock.textContent += message;
+                    }
+                } else {
+                    messageElement = document.createElement('div');
+                    messageElement.className = 'thinking-message';
+                    messageElement.textContent = message;
+                    resultsLog.appendChild(messageElement);
+                    currentThinkingBlock = messageElement;
+                    lastMessageType = 'thinking';
+                }
+            }
+            else if (type === 'thinking' && inThinkingMode) {
+                // Similar al caso 'content'
+                if (currentThinkingBlock) {
+                    if (message && message.trim()) {
+                        if (!currentThinkingBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
+                            currentThinkingBlock.textContent += ' ';
+                        }
+                        currentThinkingBlock.textContent += message;
+                    }
+                } else {
+                    messageElement = document.createElement('div');
+                    messageElement.className = 'thinking-message';
+                    messageElement.textContent = message;
+                    resultsLog.appendChild(messageElement);
+                    currentThinkingBlock = messageElement;
+                    lastMessageType = 'thinking';
+                }
+            }
+            else {
+                // Texto normal (resultado)
+                // Si estamos cambiando de tipo (después de un bloque de pensamiento)
+                if (lastMessageType !== 'result') {
+                    currentResultBlock = null;
+                    lastMessageType = 'result';
+                }
+                
+                // Añadir al bloque de resultado actual o crear uno nuevo
+                if (currentResultBlock) {
+                    if (message && message.trim()) {
+                        if (!currentResultBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
+                            currentResultBlock.textContent += ' ';
+                        }
+                        currentResultBlock.textContent += message;
+                    }
+                } else {
+                    messageElement = document.createElement('div');
+                    messageElement.className = 'result-message';
+                    messageElement.textContent = message;
+                    resultsLog.appendChild(messageElement);
+                    currentResultBlock = messageElement;
+                }
             }
             
+            // Desplazar hacia abajo para mostrar el mensaje más reciente
             resultsLog.scrollTop = resultsLog.scrollHeight;
         }
         
@@ -416,24 +426,26 @@
                 downloadContainer.style.display = 'block';
                 downloadLink.href = '/download/' + data.file_path;
                 addOverviewMessage('> El libro está listo para descargar.');
+                addMessage('¡Libro completado! Puedes descargarlo ahora.', 'system');
             }
             
             // Manejar errores
             if (data.error) {
                 addOverviewMessage(`> Error: ${data.error}`);
+                addMessage(`Error: ${data.error}`, 'error');
             }
-        });
-        
-        // Actualización de pensamientos
-        socket.on('thinking_update', (data) => {
-            console.log('Pensamiento:', data);
-            handleThinkingMessage(data.data, data.type);
         });
         
         // Actualización de resultados
         socket.on('result_update', (data) => {
             console.log('Resultado:', data);
-            handleResultMessage(data.data);
+            addMessage(data.data, 'result');
+        });
+        
+        // Actualización de pensamiento del modelo
+        socket.on('thinking_update', (data) => {
+            console.log('Pensamiento:', data);
+            addMessage(data.data, data.type);
         });
     </script>
 </body>

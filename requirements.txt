@@ -6,3 +6,8 @@ ollama==0.1.6
 python-dotenv==1.0.1
 python-docx==1.1.0
 tqdm==4.66.2
+flask==2.3.3
+flask-socketio==5.3.6
+requests==2.31.0
+simple-websocket==1.1.0
+# Eliminando gevent para usar el modo threading que es compatible con Python 3.13

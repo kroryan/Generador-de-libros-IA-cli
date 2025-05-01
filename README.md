@@ -36,12 +36,29 @@ Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fanta
 ## ⚙️ Configuración Rápida
 
 git clone [https://github.com/kroryan/Generador-de-libros-IA-cli](https://github.com/kroryan/Generador-de-libros-IA-cli).git
+
+
+
+
 cd Generador-de-libros-IA-cli
+
+
+
 pip install -r requirements.txt
+
+
+
 python src/app.py --web  #se iniciara el modo web, este modo no es recomendado ya que la web aun no esta muy pulida tambien puedes usar 
+
+
 Visita `http://localhost:5000`
 
+
+
 o tambien para la consola:
+
+
+
 
  python src/app.py 
 

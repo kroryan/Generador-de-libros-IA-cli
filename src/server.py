@@ -17,6 +17,7 @@ from structure import get_structure
 from ideas import get_ideas
 from writing import write_book
 from publishing import DocWriter
+from chapter_summary import ChapterSummaryChain
 from utils import update_model_name, get_available_models
 
 # Configurar correctamente Flask para servir archivos estáticos desde templates
@@ -352,37 +353,83 @@ def generate_book(subject, profile, style, genre, model, output_format, output_p
         print(f"Modelo seleccionado: {model}")
         update_model_name(model)
         
-        # Paso 2: Generación de estructura (25%)
+        # Paso 2: Generación de estructura (20%)
         update_generation_state('generating_structure', 'Generando estructura básica...', 5)
         socketio.emit('status_update', generation_state)
         
         title, framework, chapter_dict = get_structure(subject, genre, style, profile)
         generation_state['title'] = title
         generation_state['chapter_count'] = len(chapter_dict)
-        update_generation_state('structure_complete', f'Estructura generada: {title}', 25)
+        update_generation_state('structure_complete', f'Estructura generada: {title}', 20)
         socketio.emit('status_update', generation_state)
         time.sleep(0.5)  # Pequeña pausa para la UI
         
-        # Paso 3: Generación de ideas (50%)
-        update_generation_state('generating_ideas', 'Generando ideas para cada capítulo...', 30)
+        # Paso 3: Generación de ideas (40%)
+        update_generation_state('generating_ideas', 'Generando ideas para cada capítulo...', 25)
         socketio.emit('status_update', generation_state)
         
         summaries_dict, idea_dict = get_ideas(subject, genre, style, profile, title, framework, chapter_dict)
-        update_generation_state('ideas_complete', f'Ideas generadas para {len(idea_dict)} capítulos', 50)
+        update_generation_state('ideas_complete', f'Ideas generadas para {len(idea_dict)} capítulos', 40)
         socketio.emit('status_update', generation_state)
         time.sleep(0.5)  # Pequeña pausa para la UI
         
-        # Paso 4: Escritura del libro (90%)
-        update_generation_state('writing_book', 'Escribiendo el libro...', 55)
+        # Paso 4: Escritura del libro y generación de resúmenes (85%)
+        update_generation_state('writing_book', 'Escribiendo el libro...', 45)
         socketio.emit('status_update', generation_state)
         
-        book = write_book(genre, style, profile, title, framework, summaries_dict, idea_dict)
-        update_generation_state('writing_complete', 'Contenido del libro generado', 90)
+        # Inicializar el diccionario de resúmenes de capítulos
+        chapter_summaries = {}
+        chapter_summary_chain = ChapterSummaryChain()
+        
+        # Escribir el libro capítulo a capítulo, generando resúmenes a medida que avanzamos
+        book = {}
+        total_chapters = len(idea_dict)
+        progress_per_chapter = 40 / total_chapters  # 40% del progreso total distribuido entre capítulos
+        
+        for i, (chapter, idea_list) in enumerate(idea_dict.items(), 1):
+            generation_state['current_chapter'] = i
+            update_generation_state(
+                'writing_chapter', 
+                f'Escribiendo capítulo {i}/{total_chapters}: {chapter}', 
+                45 + (i-1) * progress_per_chapter
+            )
+            socketio.emit('status_update', generation_state)
+            
+            # Escribir un solo capítulo a la vez
+            chapter_title = summaries_dict[chapter].split('\n')[0] if '\n' in summaries_dict[chapter] else chapter
+            chapter_book = write_book(
+                genre, style, profile, title, framework, 
+                {chapter: summaries_dict[chapter]}, 
+                {chapter: idea_list},
+                chapter_summaries
+            )
+            
+            # Combinar con el libro principal
+            book.update(chapter_book)
+            
+            # Generar resumen para este capítulo completo para usar en los siguientes
+            chapter_content = "\n\n".join(chapter_book[chapter])
+            chapter_summaries[chapter] = chapter_summary_chain.run(
+                title=title,
+                chapter_num=i,
+                chapter_title=chapter_title,
+                chapter_content=chapter_content,
+                total_chapters=total_chapters
+            )
+            
+            update_generation_state(
+                'chapter_complete', 
+                f'Capítulo {i}/{total_chapters} completado', 
+                45 + i * progress_per_chapter
+            )
+            socketio.emit('status_update', generation_state)
+            
+        update_generation_state('writing_complete', 'Contenido del libro generado', 85)
         socketio.emit('status_update', generation_state)
         time.sleep(0.5)  # Pequeña pausa para la UI
         
         # Paso 5: Guardado del documento (100%)
-        update_generation_state('saving_document', f'Guardando documento en formato {output_format.upper()}...', 95)
+        update_generation_state('saving_document', f'Guardando documento en formato {output_format.upper()}...', 90)
         socketio.emit('status_update', generation_state)
         
         doc_writer = DocWriter()

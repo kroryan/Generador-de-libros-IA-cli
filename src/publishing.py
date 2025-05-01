@@ -1,9 +1,11 @@
 from docx import Document
 import os
 import sys
-from docx.shared import Pt
+from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import subprocess
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 
 def print_progress(message):
@@ -29,6 +31,20 @@ class DocWriter:
             # Crear directorio de salida si no existe
             os.makedirs(output_path, exist_ok=True)
             
+            # Añadir metadatos para mejor indexación
+            core_properties = self.doc.core_properties
+            core_properties.author = "AI Book Generator"
+            core_properties.title = title
+            core_properties.subject = "Novela generada con IA"
+            core_properties.category = "Ficción"
+            
+            # Configurar márgenes para mejor legibilidad
+            section = self.doc.sections[0]
+            section.left_margin = Inches(1.0)
+            section.right_margin = Inches(1.0)
+            section.top_margin = Inches(1.0)
+            section.bottom_margin = Inches(1.0)
+            
             # Título principal
             title_paragraph = self.doc.add_heading(title, 0)
             title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -47,11 +63,17 @@ class DocWriter:
                 chapter_heading = self.doc.add_heading(chapter_name, 1)
                 chapter_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                # Contenido del capítulo
+                # Contenido del capítulo - procesar como bloques semánticos
                 for paragraph_text in paragraphs_list:
                     if paragraph_text and paragraph_text.strip():
-                        paragraph = self.doc.add_paragraph(paragraph_text.strip())
-                        paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                        # Dividir en párrafos lógicos si hay múltiples saltos de línea
+                        inner_paragraphs = paragraph_text.strip().split('\n\n')
+                        for inner_para in inner_paragraphs:
+                            if inner_para.strip():
+                                paragraph = self.doc.add_paragraph(inner_para.strip())
+                                paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                                paragraph.paragraph_format.first_line_indent = Inches(0.25)
+                                paragraph.paragraph_format.space_after = Pt(12)
 
                 # Agregar salto de página entre capítulos
                 if chapter != list(book.keys())[-1]:  # No añadir salto después del último

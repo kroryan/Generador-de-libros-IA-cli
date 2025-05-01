@@ -2,12 +2,16 @@ from utils import BaseEventChain, print_progress, clean_think_tags, extract_cont
 
 class ChapterFrameworkChain(BaseEventChain):
     PROMPT_TEMPLATE = """
-    Como escritor, genera el marco detallado para este capítulo.
+    Como escritor profesional, genera el marco detallado para este capítulo.
     Sé específico y conciso. El marco debe incluir:
+    - Posición del capítulo en la narrativa general ({chapter_num} de {total_chapters})
     - Eventos principales
     - Desarrollo de personajes
     - Elementos mágicos/tecnológicos relevantes
     - Conflictos y resoluciones
+    - Conexiones con capítulos anteriores (si aplica)
+    - Preparación para capítulos posteriores
+
     IMPORTANTE: Todo el contenido del marco debe estar EXCLUSIVAMENTE en español. Todos los nombres, lugares, 
     elementos mágicos, tecnológicos y conceptos deben estar en español. No utilices ningún término en otro idioma.
 
@@ -17,7 +21,7 @@ class ChapterFrameworkChain(BaseEventChain):
     Tema: {subject}
     Género: {genre}
     Estilo: {style}
-    Título: {title}
+    Título del libro: {title}
     Perfil: {profile}
     Marco general: {framework}
 
@@ -27,7 +31,7 @@ class ChapterFrameworkChain(BaseEventChain):
     Marcos previos:
     {summaries}
 
-    Marco para {chapter}:"""
+    Marco para {chapter} (Capítulo {chapter_num} de {total_chapters}):"""
 
     def run(
         self,
@@ -40,8 +44,10 @@ class ChapterFrameworkChain(BaseEventChain):
         summaries_dict,
         chapter_dict,
         chapter,
+        chapter_num,
+        total_chapters
     ):
-        print_progress(f"Generando marco para: {chapter}")
+        print_progress(f"Generando marco para: {chapter} (Capítulo {chapter_num} de {total_chapters})")
         
         try:
             # Generar features usando el mismo modelo y limpiar resultado
@@ -68,7 +74,9 @@ class ChapterFrameworkChain(BaseEventChain):
                 features=features,
                 outline=outline,
                 summaries=summaries,
-                chapter=chapter
+                chapter=chapter,
+                chapter_num=chapter_num,
+                total_chapters=total_chapters
             )
 
             if not result:
@@ -82,12 +90,14 @@ class ChapterFrameworkChain(BaseEventChain):
 
 class IdeasChain(BaseEventChain):
     PROMPT_TEMPLATE = """
-    Como escritor de fantasía y ciencia ficción, genera 3-4 ideas clave para este capítulo.
+    Como escritor de fantasía y ciencia ficción, genera 3-5 ideas clave para este capítulo.
     Cada idea debe ser clara y específica, enfocándose en:
     - Desarrollo de la trama
     - Elementos mágicos/tecnológicos
     - Desarrollo de personajes
     - Conexiones con la historia general
+    - Transiciones fluidas entre secciones
+
     IMPORTANTE: Todas las ideas deben estar EXCLUSIVAMENTE en español. Todos los nombres, lugares, elementos 
     mágicos, tecnológicos y conceptos deben estar en español. No utilices ningún término en otro idioma.
 
@@ -96,17 +106,27 @@ class IdeasChain(BaseEventChain):
     Estilo: {style}
     Título: {title}
     Perfil: {profile}
-    Marco: {framework}
+    Marco general: {framework}
+    Posición: Capítulo {chapter_num} de {total_chapters}
 
-    Ideas previas: {previous_ideas}
+    Ideas de capítulos previos: {previous_ideas}
 
     Marco del capítulo:
     {summary}
 
-    Lista de ideas (una por línea):"""
+    <think>
+    Voy a generar ideas que:
+    1. Sean coherentes con el marco del capítulo
+    2. Sigan una progresión narrativa lógica
+    3. Mantengan continuidad con capítulos anteriores
+    4. Preparen elementos para capítulos posteriores
+    5. Tengan un flujo natural entre sí
+    </think>
 
-    def run(self, subject, genre, style, profile, title, framework, summary, idea_dict):
-        print_progress("Generando ideas para el capítulo")
+    Lista de ideas ordenadas para asegurar progresión narrativa fluida (una por línea):"""
+
+    def run(self, subject, genre, style, profile, title, framework, summary, idea_dict, chapter_num, total_chapters):
+        print_progress(f"Generando ideas para el capítulo {chapter_num}")
         
         try:
             # Limpiar las ideas previas
@@ -123,7 +143,9 @@ class IdeasChain(BaseEventChain):
                 title=clean_think_tags(title),
                 framework=clean_think_tags(framework),
                 summary=clean_think_tags(summary),
-                previous_ideas=previous_ideas
+                previous_ideas=previous_ideas,
+                chapter_num=chapter_num,
+                total_chapters=total_chapters
             )
 
             return self.parse(result)
@@ -155,7 +177,7 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
             print_progress(f"Procesando capítulo {i}/{total_chapters}: {chapter}")
             
             try:
-                # Generar marco del capítulo
+                # Generar marco del capítulo con información de posición
                 summaries_dict[chapter] = chapter_framework_chain.run(
                     subject=subject,
                     genre=genre,
@@ -166,10 +188,12 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
                     summaries_dict=summaries_dict,
                     chapter_dict=chapter_dict,
                     chapter=chapter,
+                    chapter_num=i,
+                    total_chapters=total_chapters
                 )
                 print_progress(f"Marco generado para: {chapter}")
 
-                # Generar ideas para el capítulo
+                # Generar ideas para el capítulo con información de posición
                 idea_dict[chapter] = ideas_chain.run(
                     subject=subject,
                     genre=genre,
@@ -179,6 +203,8 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
                     framework=framework,
                     summary=summaries_dict[chapter],
                     idea_dict=idea_dict,
+                    chapter_num=i,
+                    total_chapters=total_chapters
                 )
                 
                 print_progress(f"Completado: {chapter} - {len(idea_dict[chapter])} ideas generadas")
@@ -186,11 +212,11 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
             except Exception as e:
                 print_progress(f"Error en capítulo {chapter}: {str(e)}")
                 print_progress("Intentando continuar con el siguiente capítulo...")
-                summaries_dict[chapter] = "Error en la generación del marco"
-                idea_dict[chapter] = ["Error en la generación de ideas"]
+                summaries_dict[chapter] = f"Error en la generación del marco para el capítulo {i} de {total_chapters}"
+                idea_dict[chapter] = [f"Error en la generación de ideas para el capítulo {i} de {total_chapters}"]
                 continue
 
-        if not any(ideas != ["Error en la generación de ideas"] for ideas in idea_dict.values()):
+        if not any(ideas != [f"Error en la generación de ideas para el capítulo {i+1} de {total_chapters}"] for i, ideas in enumerate(idea_dict.values())):
             raise Exception("No se pudo generar ninguna idea válida para ningún capítulo")
 
         return summaries_dict, idea_dict

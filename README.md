@@ -1,391 +1,127 @@
-![Generador de Novelas de Fantasía con LLMs](images/sample.png)
+Aquí tienes el README completo con la Guía de Prompts integrada y mejor formato:
 
-# 📚 Generador de Novelas de Fantasía con LLMs
+
+<p align="center">
+  <img src="images/sample.png" alt="Generador de Novelas de Fantasía con LLMs" width="800">
+  <h1 align="center">📚 Generador de Novelas de Fantasía con LLMs</h1>
+</p>
+
+![GitHub last commit](https://img.shields.io/github/last-commit/tu_usuario/tu_repositorio?style=flat-square)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 ## ✨ Introducción
 
-Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fantasía completas. La aplicación web permite configurar los parámetros de generación y visualizar el proceso de creación del libro en tiempo real, mostrando el razonamiento del modelo durante la generación.
+Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fantasía completas con transparencia del proceso creativo.
 
-> **⚠️ AVISO**: Este proyecto aún se encuentra en una fase temprana de desarrollo. Pueden existir bugs y limitaciones que serán solucionados en futuras actualizaciones.
-
----
-
-## 🆕 Actualizaciones recientes (Mayo 2025)
-
-- 🧠 **Nuevo sistema de detección de modelos multi-API**: Detecta automáticamente modelos disponibles en Ollama, OpenAI, DeepSeek, Groq y proveedores personalizados
-- 🔧 **Configuración flexible mediante archivo .env**: Personaliza completamente todos los proveedores y modelos sin tocar el código
-- 🎨 **Visualización mejorada de pensamientos**: Los pensamientos del modelo ahora se muestran correctamente en amarillo y cambian a azul al terminar
-- 🖥️ Interfaz web cyberpunk completamente rediseñada
-- 📝 Visualización en tiempo real del proceso de generación, separando pensamientos y resultados finales
-- 📊 Barra de progreso visual para seguimiento detallado
-- 📋 Organización clara del contenido generado
-- 🎨 Efectos visuales mejorados para una experiencia más inmersiva
-- 📲 Diseño responsivo adaptado a diferentes dispositivos
+> **⚠️ AVISO**: Proyecto en fase temprana de desarrollo. Pueden existir bugs y limitaciones.
 
 ---
 
-## 🚀 Características
+## 🚀 Características Principales
 
-- **Generación completa** de estructuras narrativas, personajes y ambientaciones
-- **Modelo transparente** que muestra sus pensamientos durante el proceso creativo
-- **Multi-API** con soporte para Ollama (local), OpenAI, DeepSeek, Groq, Anthropic y proveedores personalizados
-- **Detección automática** de modelos disponibles en todas las APIs configuradas
-- **Personalización completa** de proveedores y modelos a través del archivo .env
-- **Exportación** a formatos PDF y DOCX con formato profesional
-- **Interfaz interactiva** con estilo cyberpunk que visualiza todo el proceso
-
----
-
-## 🎨 Interfaz de Usuario
-
-La interfaz web proporciona una experiencia visual completa del proceso de generación:
-
-### 🖥️ Panel de Control
-
-- **Selector de Modelos**: Muestra todos los modelos detectados automáticamente de Ollama, OpenAI, DeepSeek, Groq y otros proveedores configurados
-- **Parámetros de Generación**: Configure el tema, perfil, estilo narrativo y género de su libro
-- **Opciones de Exportación**: Elija entre formatos DOCX o PDF y la ubicación donde guardar el archivo
-
-### 🔄 Panel de Progreso
-
-El panel de progreso muestra la información en tiempo real sobre el proceso de generación:
-
-- **Resumen**: Visión general del progreso con actualizaciones de estado
-- **Generación**: Vista detallada que muestra:
-  - 🟡 **Pensamientos del modelo** (texto en amarillo) - El razonamiento interno del modelo
-  - 🔵 **Resultados finales** (texto en azul) - El contenido definitivo generado
-
-### 🔄 Cómo utilizar la interfaz
-
-1. **Selección de modelo**: Haga clic en el desplegable para elegir entre los modelos disponibles. Si no ve su modelo, haga clic en "ACTUALIZAR".
-2. **Configuración del libro**: Complete los campos de tema, perfil, estilo y género o utilice los valores predeterminados.
-3. **Opciones de exportación**: Despliegue el panel de opciones para seleccionar el formato (DOCX/PDF) y la ruta.
-4. **Generar**: Haga clic en "GENERAR LIBRO" para iniciar el proceso.
-5. **Seguimiento en tiempo real**: Observe cómo el modelo:
-   - Piensa en amarillo (texto entre etiquetas `<think>` y `</think>`)
-   - Muestra resultados finales en azul
-6. **Descarga**: Una vez completado, haga clic en "DESCARGAR LIBRO" para obtener el archivo generado.
+- 🧠 Soporte multi-API (Ollama, OpenAI, DeepSeek, Groq, Anthropic)
+- 📖 Generación completa de estructuras narrativas y personajes
+- 🎨 Interfaz cyberpunk con visualización en tiempo real
+- 📝 Sistema de resúmenes para coherencia narrativa
+- 📤 Exportación a PDF/DOCX con formato profesional
+- ⚙️ Configuración flexible mediante archivo `.env`
+- 🔍 Transparencia del proceso con pensamientos del modelo
 
 ---
 
-## 🌐 Proveedores de LLM Compatibles
+## 🖥️ Demo Interactiva
 
-El sistema detecta y utiliza automáticamente cualquiera de estos proveedores:
-
-### 💻 Ollama (modelos locales)
-
-- Detecta automáticamente todos los modelos instalados en su servidor Ollama local
-- Recomendados: `llama3`, `gemma:7b`, `mistral`
-
-### 🔐 OpenAI API
-
-- Acceso a modelos GPT si tiene configurada una API key de OpenAI
-- Modelos disponibles: `gpt-3.5-turbo`, `gpt-4`, `gpt-4o`, etc.
-
-### 📡 DeepSeek API
-
-- Acceso a los modelos de DeepSeek con una API key configurada
-- Modelos disponibles: `deepseek-chat`, `deepseek-reasoner`
-
-### 🚀 Groq API
-
-- Acceso a modelos rápidos con una API key de Groq
-- Modelos disponibles: `llama3-8b-8192`, `mixtral-8x7b-32768`, `qwen-qwq-32b`, etc.
-
-### 🤖 Anthropic API
-
-- Acceso a modelos Claude con una API key de Anthropic
-- Modelos disponibles: `claude-3-opus`, `claude-3-sonnet`, `claude-3-haiku`
-
-### 🔌 Proveedores personalizados
-
-- Posibilidad de añadir cualquier proveedor compatible con la API de OpenAI
-- Ejemplos: OpenRouter, Together.ai, etc.
+![Interfaz del Generador](images/sample.png)
 
 ---
 
-## ⚙️ Configuración avanzada con archivo .env
+## ⚙️ Configuración Rápida
 
-El archivo `.env` permite una configuración completa y personalizada de todos los proveedores y modelos sin necesidad de modificar el código fuente.
+git clone https://github.com/tu_usuario/tu_repositorio.git
+cd tu_repositorio
+pip install -r requirements.txt
+python src/server.py
+Visita `http://localhost:5000`
 
-### Configuración básica
+---
+
+## 🛠️ Guía de Prompts
+
+### 🔍 Ubicación de los Prompts
+
+| Archivo               | Clase                 | Propósito |
+|-----------------------|-----------------------|-----------|
+| `structure.py`        | `TitleChain`          | Título del libro |
+| `structure.py`        | `FrameworkChain`      | Marco narrativo |
+| `ideas.py`            | `IdeasChain`          | Desarrollo de ideas |
+| `writing.py`          | `WriterChain`         | Escritura narrativa |
+
+### 📝 Personalización de Prompts
+
+1. Edite el archivo correspondiente
+2. Busque `PROMPT_TEMPLATE`
+3. Modifique manteniendo los marcadores `{variables}`
+
+**Ejemplo para estilo poético** (`writing.py`):
+```python
+PROMPT_TEMPLATE = """
+Eres un poeta y escritor de fantasía en español.
+Utiliza lenguaje metafórico y descripciones vívidas.
+...
+"""
+```
+
+---
+
+## 🌐 Proveedores Compatibles
+
+| Proveedor       | Modelos Ejemplo         | Requisitos         |
+|-----------------|-------------------------|--------------------|
+| Ollama (Local)  | llama3, mistral         | Servidor Ollama    |
+| OpenAI          | GPT-4, GPT-3.5          | API Key            |
+| Groq            | Mixtral-8x7b            | API Key            |
+| Anthropic       | Claude-3                | API Key + librería |
+
+---
+
+## ⚙️ Configuración .env
 
 ```env
-# Tipo de modelo predeterminado a utilizar: "ollama", "openai", "deepseek", "groq", etc.
-MODEL_TYPE=ollama
-
-# Configuración de Ollama (local)
+# Ollama
 OLLAMA_MODEL=llama3
 OLLAMA_API_BASE=http://localhost:11434
 
-# Configuración de OpenAI
-OPENAI_API_KEY=su_clave_aquí
-OPENAI_MODEL=gpt-3.5-turbo
-OPENAI_API_BASE=https://api.openai.com/v1
-
-# Configuración de DeepSeek
-DEEPSEEK_API_KEY=su_clave_aquí
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_API_BASE=https://api.deepseek.com
-
-# Configuración de Groq
-GROQ_API_KEY=su_clave_aquí
-GROQ_MODEL=llama3-8b-8192
-GROQ_API_BASE=https://api.groq.com/openai/v1
-# Lista de modelos disponibles en Groq (separados por comas)
-GROQ_AVAILABLE_MODELS=llama3-8b-8192,mixtral-8x7b-32768,qwen-qwq-32b,gemma-7b-it
-
-# Configuración de Anthropic
-ANTHROPIC_API_KEY=su_clave_aquí
-ANTHROPIC_MODEL=claude-3-opus
-ANTHROPIC_API_BASE=https://api.anthropic.com/v1
-ANTHROPIC_AVAILABLE_MODELS=claude-3-opus,claude-3-sonnet,claude-3-haiku
+# OpenAI
+OPENAI_API_KEY=tu_clave
+OPENAI_MODEL=gpt-4
 ```
 
-### Añadir proveedores personalizados
+---
 
-Para añadir un proveedor personalizado (por ejemplo, OpenRouter para acceder a DeepSeek 70b):
+## 🚧 Proceso de Generación
 
-```env
-# OpenRouter (ejemplo para acceder a DeepSeek 70b)
-OPENROUTER_API_KEY=su_clave_de_openrouter_aquí
-OPENROUTER_MODEL=deepseek-70b
-OPENROUTER_API_BASE=https://openrouter.ai/api/v1
-OPENROUTER_AVAILABLE_MODELS=deepseek-70b,deepseek-coder,llama-3-70b
-```
-
-### Funcionamiento detallado del sistema de configuración
-
-1. **Detección automática de Ollama**: Los modelos de Ollama siempre se escanean automáticamente desde el servidor local, independientemente de la configuración en el archivo .env.
-
-2. **Configuración de proveedores**: Para cada proveedor, se pueden definir cuatro variables principales:
-   - `NOMBRE_PROVIDER_API_KEY`: Clave API para autenticación
-   - `NOMBRE_PROVIDER_MODEL`: Modelo predeterminado a utilizar
-   - `NOMBRE_PROVIDER_API_BASE`: URL base de la API
-   - `NOMBRE_PROVIDER_AVAILABLE_MODELS`: Lista de modelos disponibles, separados por comas
-
-3. **Prioridad de selección**: El sistema intentará usar los modelos en este orden:
-   - El modelo seleccionado explícitamente por el usuario en la interfaz
-   - El proveedor especificado en `MODEL_TYPE`
-   - Ollama (si está disponible)
-   - Cualquier otro proveedor configurado con API key válida
-
-4. **Cambio dinámico**: Si un proveedor falla o no está disponible, el sistema intentará automáticamente usar el siguiente proveedor configurado.
-
-### Limitaciones actuales del sistema de configuración (a solucionar en futuras versiones)
-
-- No todos los proveedores tienen soporte completo para todas sus funciones
-- La integración con Anthropic requiere la instalación adicional de `langchain_anthropic`
-- Algunos proveedores pueden requerir configuraciones adicionales no documentadas
-- La detección de modelos desde algunos proveedores puede ser imprecisa
-- No hay soporte para parámetros avanzados como temperatura, top_p, etc. en el archivo .env
+1. **Estructura (20%)**: Título y marco narrativo
+2. **Ideas (40%)**: Desarrollo de capítulos
+3. **Escritura (85%)**: Narrativa detallada
+4. **Publicación (100%)**: Exportación a PDF/DOCX
 
 ---
 
-## 📁 Estructura del Proyecto
+## 🔍 Solución de Problemas
 
-### Archivos Principales
-
-| Archivo         | Descripción |
-|----------------|-------------| 
-| `server.py`    | Servidor web para la interfaz gráfica con WebSockets para streaming en tiempo real |
-| `utils.py`     | Sistema multi-API para modelos de IA, gestión de pensamiento transparente |
-| `structure.py` | Generación de la estructura narrativa inicial |
-| `ideas.py`     | Desarrollo de ideas por capítulo |
-| `writing.py`   | Escritura narrativa detallada |
-| `publishing.py`| Generación de documentos DOCX y PDF con formato profesional |
-
-### Archivos de Interfaz
-
-| Archivo         | Descripción |
-|----------------|-------------| 
-| `templates/index.html` | Interfaz web principal |
-| `templates/style.css`  | Estilos visuales con tema cyberpunk |
-| `templates/favicon.ico`| Icono de la aplicación |
-| `templates/Background.webp` | Fondo visual de la interfaz |
+| Problema                          | Solución                          |
+|-----------------------------------|-----------------------------------|
+| Modelo no muestra pensamientos    | Verificar etiquetas `<think>`     |
+| Selector de modelos vacío         | Actualizar lista + verificar .env |
+| Errores de generación             | Reducir tamaño del libro          |
 
 ---
 
-## 💻 Requisitos del Sistema
+## 🚧 Desarrollo Futuro
 
-- Python 3.8 o superior
-- Requisitos según el modelo que utilice:
-  - **Ollama**: Ollama instalado y en ejecución (`https://ollama.com/`)
-  - **OpenAI/DeepSeek/Groq/Anthropic**: API keys válidas
-- Para Anthropic: Instalar `pip install langchain_anthropic`
-- LibreOffice (opcional, para exportar a PDF)
-- Navegador web moderno
+- ✅ Soporte para parámetros avanzados
+- ✅ Integración con más proveedores
+- ✅ Generación de imágenes
 
 ---
-
-## 🧩 Instalación
-
-1. Clone el repositorio:
-```bash
-git clone https://github.com/yourusername/Generating-Books-with-LLMs.git
-cd Generating-Books-with-LLMs
-```
-
-2. Instale las dependencias:
-```bash
-pip install -r requirements.txt
-```
-
-3. Configure su archivo `.env` con las claves API necesarias (opcional si usa Ollama)
-
-4. Ejecute la aplicación:
-```bash
-python src/server.py
-```
-
-5. Acceda a la interfaz web en `http://localhost:5000`
-
----
-
-## 🛠️ Uso del Generador
-
-### Interfaz Web (Recomendado)
-
-1. **Iniciar el servidor**:
-```bash
-python src/server.py
-```
-
-2. **Acceder a la interfaz**:
-   - URL: `http://localhost:5000`
-   - Seleccione un modelo de la lista desplegable
-   - Configure los parámetros del libro
-   - Haga clic en "GENERAR LIBRO"
-
-3. **Observe el proceso en tiempo real**:
-   - La pestaña "RESUMEN" muestra el progreso general
-   - La pestaña "GENERACIÓN" muestra:
-     - 🟡 **Pensamientos del modelo** (amarillo) - Razonamiento interno
-     - 🔵 **Resultados finales** (azul) - Contenido definitivo
-
-4. **Al finalizar**:
-   - La barra de progreso alcanzará el 100%
-   - Aparecerá el botón "DESCARGAR LIBRO"
-   - Haga clic para obtener su libro en el formato seleccionado
-
-### Ventajas de la visualización de pensamientos
-
-El sistema muestra el razonamiento del modelo (en color amarillo) durante la generación, lo que permite:
-
-- Entender cómo el modelo toma decisiones narrativas
-- Ver las alternativas que considera antes de elegir un enfoque
-- Apreciar el proceso creativo detrás del contenido final
-- Identificar posibles problemas o sesgos en el razonamiento
-
-Este enfoque de "IA transparente" hace que el proceso sea más comprensible y controlable.
-
----
-
-## 📊 Proceso de Generación
-
-El generador sigue un flujo estructurado:
-
-1. **Estructura (25%)**: 
-   - Creación del título, premisa y marco narrativo
-   - Planificación de capítulos y arcos argumentales
-
-2. **Ideas (50%)**:
-   - Desarrollo detallado de cada capítulo
-   - Creación de personajes, escenarios y tramas
-
-3. **Escritura (90%)**:
-   - Redacción completa del texto narrativo
-   - Desarrollo de diálogos y descripciones
-
-4. **Publicación (100%)**:
-   - Formateo profesional del documento
-   - Exportación al formato seleccionado
-
-Todo este proceso es visible en tiempo real con colores diferenciados para mayor claridad.
-
----
-
-## ⚠️ Problemas conocidos y limitaciones
-
-### Limitaciones actuales
-
-- **Integración de Anthropic**: Requiere instalación adicional de `langchain_anthropic`
-- **Tamaño de libros**: Libros muy largos pueden exceder el contexto de algunos modelos
-- **Generación inconsistente**: Algunos modelos pueden generar texto incoherente o repetitivo
-- **Uso de recursos**: Modelos locales de Ollama pueden consumir mucha RAM y GPU
-- **Compatibilidad de OpenRouter**: La integración con OpenRouter está en fase experimental
-- **Manejo de errores**: El sistema puede no recuperarse correctamente de ciertos errores de API
-
-### Bugs conocidos (a solucionar en próximas versiones)
-
-- Posibles pérdidas de conexión WebSocket durante generaciones largas
-- Problemas con la detección de modelos en Ollama si hay muchos modelos instalados
-- Inconsistencias en la visualización del progreso en algunos navegadores
-- Posibles errores al usar API keys inválidas o expiradas
-- El sistema no siempre libera correctamente los recursos al cancelar una generación
-
----
-
-## 🔍 Solución de problemas
-
-### El modelo no muestra pensamientos en color amarillo
-
-- Verifique que el modelo utilizado soporte la generación de etiquetas `<think>` y `</think>`
-- Los modelos de Ollama suelen mostrar pensamientos correctamente
-- Algunos modelos de OpenAI pueden requerir instrucciones específicas
-
-### No aparecen modelos en el selector
-
-- Haga clic en el botón "ACTUALIZAR"
-- Verifique que Ollama esté en ejecución si desea usar modelos locales
-- Compruebe su archivo `.env` para asegurarse de que las API keys sean correctas
-- Revise los registros del servidor en la consola
-
-### Error al generar el libro
-
-- Verifique que el modelo seleccionado tenga suficiente contexto y capacidades
-- Los modelos más pequeños pueden tener dificultades con libros complejos
-- Intente con un tema o género diferente
-
-### Problemas con proveedores específicos
-
-- **Ollama**: Asegúrese de que el servicio esté en ejecución (`http://localhost:11434`)
-- **OpenAI/Groq/DeepSeek**: Verifique que su API key sea válida y tenga saldo suficiente
-- **Anthropic**: Confirme que ha instalado `langchain_anthropic` con `pip install langchain_anthropic`
-- **Proveedores personalizados**: Asegúrese de que la URL base sea correcta y el formato sea compatible con OpenAI
-
----
-
-## 🚧 Desarrollo futuro
-
-Estas son algunas de las mejoras planificadas para futuras versiones:
-
-- Soporte completo para todos los parámetros de generación (temperatura, top_p, etc.)
-- Mejora del manejo de errores y recuperación automática
-- Integración nativa con más proveedores de LLMs
-- Persistencia de configuraciones y preferencias del usuario
-- Posibilidad de continuar generaciones interrumpidas
-- Edición interactiva del libro generado
-- Generación de imágenes para ilustrar el libro
-
-¡Las contribuciones son bienvenidas!
-
----
-
-## 📝 Licencia
-
-Este proyecto está bajo la licencia MIT. Consulte el archivo LICENSE.txt para más detalles.
-
----
-
-## 🙏 Agradecimientos
-
-Este proyecto utiliza varias tecnologías de código abierto:
-
-- **LangChain**: Framework para aplicaciones basadas en LLMs
-- **Ollama**: Ejecución local de modelos de IA
-- **Flask & Socket.IO**: Servidor web con comunicación en tiempo real
-- **python-docx & ReportLab**: Generación de documentos
-
-Un agradecimiento especial a la comunidad de código abierto que ha hecho posible el acceso democratizado a potentes modelos de lenguaje.
-

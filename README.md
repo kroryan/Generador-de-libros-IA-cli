@@ -1,4 +1,3 @@
-Aquí tienes el README completo con la Guía de Prompts integrada y mejor formato:
 
 
 <p align="center">

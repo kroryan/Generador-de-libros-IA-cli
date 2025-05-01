@@ -5,9 +5,8 @@
   <h1 align="center">📚 Generador de Novelas de Fantasía con LLMs</h1>
 </p>
 
-![GitHub last commit](https://img.shields.io/github/last-commit/tu_usuario/tu_repositorio?style=flat-square)
+![GitHub last commit]([https://img.shields.io/github/last-commit/tu_usuario/tu_repositorio](https://github.com/kroryan/Generador-de-libros-IA-cli)?style=flat-square)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
 ## ✨ Introducción
 

@@ -25,7 +25,13 @@ app = Flask(__name__,
             static_folder=os.path.join(parent_dir, 'templates'))
 
 # Utilizar el servidor integrado de werkzeug para evitar problemas de monkey patching
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    ping_interval=25,        # Latido cada 25 segundos para mantener la conexión viva
+    ping_timeout=259200      # Timeout de 72 horas (en segundos)
+)
 
 # Función para limpiar códigos de escape ANSI
 def clean_ansi_codes(text):

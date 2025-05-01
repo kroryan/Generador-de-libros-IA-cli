@@ -8,12 +8,39 @@ def print_step(message):
     print(f"\n=== {message} ===")
     sys.stdout.flush()
 
-def run_cli_generation():
+def run_cli_generation(model=None):
     try:
         from structure import get_structure
         from ideas import get_ideas
         from writing import write_book
         from publishing import DocWriter
+        from utils import update_model_name
+
+        # Configurar el modelo LLM si se especificó uno
+        if model:
+            print_step(f"Configurando modelo: {model}")
+            update_model_name(model)
+            # Establecer MODEL_TYPE en el entorno para casos de fallback
+            provider = model.split(':')[0] if ':' in model else 'ollama'
+            os.environ["MODEL_TYPE"] = provider
+            
+            # Detectar modelos con contexto limitado
+            model_name = model.split(':')[1] if ':' in model else model
+            if 'deepseek' in model_name.lower():
+                print_step("Detectado modelo Deepseek: configurando modo de contexto limitado")
+                os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+            elif any(small in model_name.lower() for small in ['7b', '8b', '9b']):
+                print_step("Detectado modelo de tamaño pequeño: configurando modo de contexto limitado")
+                os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+            else:
+                os.environ["MODEL_CONTEXT_SIZE"] = "standard"
+        else:
+            # Utilizar el MODEL_TYPE del .env si existe
+            model_type = os.environ.get("MODEL_TYPE", "").strip()
+            if model_type:
+                print_step(f"Usando tipo de modelo del archivo .env: {model_type}")
+            else:
+                print_step("No se especificó modelo, se usará el configurado en .env o el predeterminado")
 
         subject = """
         El tema del libro es una aventura épica que combina fantasía y ciencia ficción. 
@@ -66,6 +93,33 @@ def run_cli_generation():
         print(f"\nError durante la generación: {str(e)}")
         sys.exit(1)
 
+def list_available_models():
+    """Lista todos los modelos disponibles en los proveedores configurados"""
+    from utils import get_available_models
+    
+    print_step("Modelos disponibles")
+    models = get_available_models()
+    
+    # Agrupar modelos por proveedor
+    providers = {}
+    for model in models:
+        provider = model["provider"]
+        if provider not in providers:
+            providers[provider] = []
+        providers[provider].append(model)
+    
+    # Mostrar modelos agrupados por proveedor
+    for provider, provider_models in providers.items():
+        print(f"\n{provider.upper()}:")
+        for model in provider_models:
+            print(f"  - {model['name']} (usar como: {model['value']})")
+    
+    print("\nEjemplos de uso:")
+    print("  python app.py --model groq:llama3-8b-8192")
+    print("  python app.py --model openai:gpt-4o")
+    print("  python app.py --model anthropic:claude-3-opus")
+    print("  python app.py --model ollama:llama3")
+
 def run_web_interface():
     # Importar desde el directorio actual, no desde 'src'
     from server import app, socketio
@@ -85,10 +139,21 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description="Generador de libros con LLMs")
     parser.add_argument("--web", action="store_true", help="Iniciar la interfaz web")
+    parser.add_argument("--model", type=str, help="Modelo a utilizar (ej: groq:llama3-8b-8192, openai:gpt-4)")
+    parser.add_argument("--list-models", action="store_true", help="Listar todos los modelos disponibles")
     
     args = parser.parse_args()
     
-    if args.web:
+    if args.list_models:
+        list_available_models()
+    elif args.web:
+        if args.model:
+            # Configurar el modelo por defecto antes de iniciar la interfaz web
+            from utils import update_model_name
+            update_model_name(args.model)
+            # Establecer MODEL_TYPE en el entorno
+            provider = args.model.split(':')[0] if ':' in args.model else 'ollama'
+            os.environ["MODEL_TYPE"] = provider
         run_web_interface()
     else:
-        run_cli_generation()
+        run_cli_generation(args.model)

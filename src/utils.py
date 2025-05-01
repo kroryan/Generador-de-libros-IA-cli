@@ -249,24 +249,36 @@ def get_llm_model(callbacks=None):
     if selected:
         provider, model_name = parse_model_string(selected)
     else:
-        # Fallback por prioridad de proveedores en env
-        if os.environ.get("OLLAMA_MODEL", "").strip():
-            provider = "ollama"
-            model_name = os.environ["OLLAMA_MODEL"]
-        elif os.environ.get("GROQ_MODEL", "").strip():
-            provider = "groq"
-            model_name = os.environ["GROQ_MODEL"]
-        elif os.environ.get("OPENAI_MODEL", "").strip():
-            provider = "openai"
-            model_name = os.environ["OPENAI_MODEL"]
-        elif os.environ.get("DEEPSEEK_MODEL", "").strip():
-            provider = "deepseek"
-            model_name = os.environ["DEEPSEEK_MODEL"]
-        elif os.environ.get("ANTHROPIC_MODEL", "").strip():
-            provider = "anthropic"
-            model_name = os.environ["ANTHROPIC_MODEL"]
+        # Leer el tipo de modelo preferido desde MODEL_TYPE
+        model_type = os.environ.get("MODEL_TYPE", "").strip().lower()
+        
+        # Si se ha especificado explícitamente un tipo de modelo en .env
+        if model_type:
+            if model_type == "groq" and os.environ.get("GROQ_MODEL", "").strip():
+                provider = "groq"
+                model_name = os.environ["GROQ_MODEL"]
+            elif model_type == "openai" and os.environ.get("OPENAI_MODEL", "").strip():
+                provider = "openai"
+                model_name = os.environ["OPENAI_MODEL"]
+            elif model_type == "deepseek" and os.environ.get("DEEPSEEK_MODEL", "").strip():
+                provider = "deepseek"
+                model_name = os.environ["DEEPSEEK_MODEL"]
+            elif model_type == "anthropic" and os.environ.get("ANTHROPIC_MODEL", "").strip():
+                provider = "anthropic"
+                model_name = os.environ["ANTHROPIC_MODEL"]
+            elif model_type == "ollama" and os.environ.get("OLLAMA_MODEL", "").strip():
+                provider = "ollama"
+                model_name = os.environ["OLLAMA_MODEL"]
+            # Para otros proveedores personalizados
+            elif os.environ.get(f"{model_type.upper()}_MODEL", "").strip():
+                provider = model_type
+                model_name = os.environ[f"{model_type.upper()}_MODEL"]
+            else:
+                # Si el tipo de modelo está vacío o no tiene configuración, usar fallback
+                provider, model_name = fallback_to_available_provider()
         else:
-            provider, model_name = "ollama", "llama2"
+            # Si no hay MODEL_TYPE, usar fallback a los proveedores disponibles
+            provider, model_name = fallback_to_available_provider()
     
     # Parámetros comunes
     common_params = {
@@ -280,11 +292,15 @@ def get_llm_model(callbacks=None):
         try:
             groq_api_key = os.environ.get("GROQ_API_KEY", "")
             groq_api_base = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-            groq_model = os.environ.get("GROQ_MODEL", "llama3-8b-8192")
             
-            print_progress(f"Utilizando modelo Groq: {groq_model}")
+            if not groq_api_key:
+                print_progress("API key de Groq no encontrada. Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["groq"])
+                return get_provider_model(provider, model_name, common_params)
+                
+            print_progress(f"Utilizando modelo Groq: {model_name}")
             return ChatOpenAI(
-                model=groq_model,
+                model=model_name,
                 api_key=groq_api_key,
                 base_url=groq_api_base,
                 **common_params
@@ -292,35 +308,23 @@ def get_llm_model(callbacks=None):
         except Exception as e:
             print_progress(f"Error al inicializar Groq: {str(e)}")
             print_progress("Cambiando a otro modelo disponible.")
+            provider, model_name = fallback_to_available_provider(exclude=["groq"])
+            return get_provider_model(provider, model_name, common_params)
     
     # Caso especial para Ollama que usa ChatOllama
     if provider == "ollama":
         # Obtener la configuración de Ollama
         ollama_api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
-        ollama_model = os.environ.get("OLLAMA_MODEL", "llama2")
         
         if not check_ollama_available():
             print_progress(f"Ollama no está disponible en {ollama_api_base}. Cambiando a otro modelo disponible.")
-            # Intentar con Groq si está configurado
-            if os.environ.get("GROQ_API_KEY", ""):
-                print_progress("Cambiando a Groq")
-                os.environ["SELECTED_MODEL"] = "groq"
-                return get_llm_model(callbacks)
-            # Luego intentar con OpenAI
-            elif os.environ.get("OPENAI_API_KEY", ""):
-                print_progress("Cambiando a OpenAI")
-                os.environ["SELECTED_MODEL"] = "openai"
-                return get_llm_model(callbacks)
-            # Finalmente DeepSeek
-            elif os.environ.get("DEEPSEEK_API_KEY", ""):
-                print_progress("Cambiando a DeepSeek")
-                os.environ["SELECTED_MODEL"] = "deepseek"
-                return get_llm_model(callbacks)
+            provider, model_name = fallback_to_available_provider(exclude=["ollama"])
+            return get_provider_model(provider, model_name, common_params)
         else:
             try:
-                print_progress(f"Utilizando modelo Ollama: {ollama_model}")
+                print_progress(f"Utilizando modelo Ollama: {model_name}")
                 return ChatOllama(
-                    model=ollama_model,
+                    model=model_name,
                     base_url=ollama_api_base,
                     **common_params,
                     top_k=50,
@@ -330,102 +334,258 @@ def get_llm_model(callbacks=None):
             except Exception as e:
                 print_progress(f"Error al inicializar Ollama: {str(e)}")
                 print_progress("Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["ollama"])
+                return get_provider_model(provider, model_name, common_params)
+    
+    # Usar función helper para el resto de proveedores
+    return get_provider_model(provider, model_name, common_params)
+
+def get_provider_model(provider, model_name, common_params):
+    """Función helper para obtener el modelo de un proveedor específico"""
     
     # Para OpenAI
     if provider == "openai":
         try:
             openai_api_key = os.environ.get("OPENAI_API_KEY", "")
             openai_api_base = os.environ.get("OPENAI_API_BASE", "")
-            openai_model = os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo")
+            
+            if not openai_api_key:
+                print_progress("API key de OpenAI no encontrada. Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["openai"])
+                return get_provider_model(provider, model_name, common_params)
             
             # Parámetros específicos para OpenAI
-            openai_params = {**common_params, "model": openai_model}
+            openai_params = {**common_params, "model": model_name}
             
             # Añadir API key si está disponible
-            if openai_api_key and openai_api_key.strip():
-                openai_params["api_key"] = openai_api_key
+            openai_params["api_key"] = openai_api_key
             
             # Si se ha especificado una API base alternativa
             if openai_api_base and openai_api_base.strip():
                 openai_params["base_url"] = openai_api_base
-                print_progress(f"Utilizando API compatible con OpenAI: {openai_model} (Base: {openai_api_base})")
+                print_progress(f"Utilizando API compatible con OpenAI: {model_name} (Base: {openai_api_base})")
             else:
-                print_progress(f"Utilizando modelo OpenAI: {openai_model}")
+                print_progress(f"Utilizando modelo OpenAI: {model_name}")
                 
             return ChatOpenAI(**openai_params)
         except Exception as e:
             print_progress(f"Error al inicializar OpenAI: {str(e)}")
+            provider, model_name = fallback_to_available_provider(exclude=["openai"])
+            return get_provider_model(provider, model_name, common_params)
     
     # Para DeepSeek
     if provider == "deepseek":
         try:
             deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
             deepseek_api_base = os.environ.get("DEEPSEEK_API_BASE", "https://api.deepseek.com")
-            deepseek_model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
             
-            print_progress(f"Utilizando modelo DeepSeek: {deepseek_model}")
+            if not deepseek_api_key:
+                print_progress("API key de DeepSeek no encontrada. Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["deepseek"])
+                return get_provider_model(provider, model_name, common_params)
+            
+            print_progress(f"Utilizando modelo DeepSeek: {model_name}")
             return ChatOpenAI(
                 api_key=deepseek_api_key,
                 base_url=deepseek_api_base,
-                model=deepseek_model,
+                model=model_name,
                 **common_params
             )
         except Exception as e:
             print_progress(f"Error al inicializar DeepSeek: {str(e)}")
+            provider, model_name = fallback_to_available_provider(exclude=["deepseek"])
+            return get_provider_model(provider, model_name, common_params)
     
     # Para modelos de Anthropic
     if provider == "anthropic":
         try:
             anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            anthropic_api_base = os.environ.get("ANTHROPIC_API_BASE", "https://api.anthropic.com/v1")
-            anthropic_model = os.environ.get("ANTHROPIC_MODEL", "claude-3-opus")
             
-            print_progress(f"Utilizando modelo Anthropic: {anthropic_model}")
+            if not anthropic_api_key:
+                print_progress("API key de Anthropic no encontrada. Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["anthropic"])
+                return get_provider_model(provider, model_name, common_params)
+            
+            print_progress(f"Utilizando modelo Anthropic: {model_name}")
             # Anthropic requiere configuración especial
             from langchain_anthropic import ChatAnthropic
             return ChatAnthropic(
-                model=anthropic_model,
+                model=model_name,
                 anthropic_api_key=anthropic_api_key,
                 **common_params
             )
         except Exception as e:
             print_progress(f"Error al inicializar Anthropic: {str(e)}. Es posible que necesites instalar langchain_anthropic.")
+            provider, model_name = fallback_to_available_provider(exclude=["anthropic"])
+            return get_provider_model(provider, model_name, common_params)
     
     # Para cualquier otro proveedor personalizado (compatible con OpenAI)
     try:
         # Buscar configuración para este proveedor
         provider_api_key = os.environ.get(f"{provider.upper()}_API_KEY", "")
         provider_api_base = os.environ.get(f"{provider.upper()}_API_BASE", "")
-        provider_model = os.environ.get(f"{provider.upper()}_MODEL", "")
         
-        if provider_api_key and provider_api_base and provider_model:
-            print_progress(f"Utilizando modelo personalizado {provider.capitalize()}: {provider_model}")
-            return ChatOpenAI(
-                model=provider_model,
-                api_key=provider_api_key,
-                base_url=provider_api_base,
-                **common_params
-            )
+        if not provider_api_key or not provider_api_base:
+            print_progress(f"Configuración incompleta para {provider}. Cambiando a otro modelo disponible.")
+            provider, model_name = fallback_to_available_provider(exclude=[provider])
+            return get_provider_model(provider, model_name, common_params)
+        
+        print_progress(f"Utilizando modelo personalizado {provider.capitalize()}: {model_name}")
+        return ChatOpenAI(
+            model=model_name,
+            api_key=provider_api_key,
+            base_url=provider_api_base,
+            **common_params
+        )
     except Exception as e:
         print_progress(f"Error al inicializar proveedor personalizado {provider}: {str(e)}")
+        provider, model_name = fallback_to_available_provider(exclude=[provider])
+        return get_provider_model(provider, model_name, common_params)
+
+def fallback_to_available_provider(exclude=None):
+    """Encuentra un proveedor disponible para usar como fallback"""
+    if exclude is None:
+        exclude = []
     
-    # Si todo lo demás falla, intentar un último recurso con Ollama
-    if check_ollama_available():
-        try:
-            print_progress("Todos los modelos configurados fallaron. Intentando último recurso con Ollama...")
-            return ChatOllama(
-                model="llama2",  # Modelo básico que probablemente esté disponible
-                base_url=os.environ.get("OLLAMA_API_BASE", "http://localhost:11434"),
-                **common_params,
-                top_k=50,
-                top_p=0.9,
-                repeat_penalty=1.1
-            )
-        except Exception as e:
-            print_progress(f"Error al inicializar Ollama como último recurso: {str(e)}")
+    # Ordenar proveedores por prioridad
+    # 1. Groq (rápido y buena calidad)
+    if os.environ.get("GROQ_API_KEY", "") and "groq" not in exclude and os.environ.get("GROQ_MODEL", ""):
+        return "groq", os.environ["GROQ_MODEL"]
     
-    # Si todo lo demás falla, lanzar un error claro
-    raise ValueError("No se pudo inicializar ningún modelo LLM. Por favor, configura al menos un proveedor en el archivo .env")
+    # 2. OpenAI (estable)
+    if os.environ.get("OPENAI_API_KEY", "") and "openai" not in exclude and os.environ.get("OPENAI_MODEL", ""):
+        return "openai", os.environ["OPENAI_MODEL"]
+    
+    # 3. DeepSeek
+    if os.environ.get("DEEPSEEK_API_KEY", "") and "deepseek" not in exclude and os.environ.get("DEEPSEEK_MODEL", ""):
+        return "deepseek", os.environ["DEEPSEEK_MODEL"]
+    
+    # 4. Anthropic
+    if os.environ.get("ANTHROPIC_API_KEY", "") and "anthropic" not in exclude and os.environ.get("ANTHROPIC_MODEL", ""):
+        return "anthropic", os.environ["ANTHROPIC_MODEL"]
+    
+    # 5. Ollama como último recurso
+    if "ollama" not in exclude and check_ollama_available():
+        if os.environ.get("OLLAMA_MODEL", ""):
+            return "ollama", os.environ["OLLAMA_MODEL"]
+        else:
+            return "ollama", "llama2" # modelo por defecto
+    
+    # Buscar proveedores personalizados
+    for key in os.environ:
+        if key.endswith("_API_KEY") and key not in ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY"]:
+            provider = key.replace("_API_KEY", "").lower()
+            model = os.environ.get(f"{provider.upper()}_MODEL", "")
+            if provider not in exclude and model:
+                return provider, model
+    
+    # Si todo lo demás falla
+    raise ValueError("No se pudo encontrar ningún proveedor de LLM disponible. Configure al menos un proveedor en el archivo .env")
+
+def detect_model_size(llm):
+    """
+    Detecta automáticamente el tamaño aproximado del modelo en uso
+    basado en metadatos disponibles o comportamiento.
+    
+    Args:
+        llm: Instancia del modelo de lenguaje
+        
+    Returns:
+        str: Clasificación de tamaño ("small", "standard", "large")
+    """
+    try:
+        # Intentar obtener información del modelo desde diferentes atributos
+        model_info = ""
+        
+        # Para modelos de diferentes bibliotecas, los atributos varían
+        if hasattr(llm, "model_name"):
+            model_info = llm.model_name
+        elif hasattr(llm, "model"):
+            model_info = str(llm.model)
+        elif hasattr(llm, "_llm_type"):
+            model_info = llm._llm_type
+            
+        # Buscar pistas sobre el tamaño en el nombre del modelo
+        model_info = model_info.lower()
+        
+        # Detectar tamaño por nombre
+        if any(term in model_info for term in ["7b", "8b", "9b", "tiny", "small", "gemma-2b"]):
+            return "small"
+        elif any(term in model_info for term in ["13b", "14b", "20b", "medium", "gemma-7b"]):
+            return "standard"
+        elif any(term in model_info for term in ["70b", "50b", "33b", "32b", "30b", "large", "claude", "opus", "gpt-4"]):
+            return "large"
+            
+        # Si no podemos determinar por el nombre, intentar inferir
+        # por el comportamiento (respuesta a un prompt corto)
+        test_prompt = "En una sola frase, explica el equilibrio."
+        response = llm(test_prompt)
+        
+        # Modelos pequeños suelen dar respuestas más cortas y simples
+        if len(response) < 100:
+            return "small"
+        elif len(response) > 300:
+            return "large"
+        else:
+            return "standard"
+            
+    except:
+        # Si todo falla, asumir un modelo estándar
+        return "standard"
+
+def recover_from_model_collapse(llm, chapter_details, context_manager, section_position):
+    """
+    Intenta recuperar un modelo que muestra señales de colapso generando
+    contenido de manera controlada y minimalista.
+    
+    Args:
+        llm: Modelo de lenguaje
+        chapter_details: Detalles del capítulo actual
+        context_manager: Gestor de contexto
+        section_position: Posición en el capítulo
+        
+    Returns:
+        str: Contenido de contingencia generado
+    """
+    print_progress("🚑 Iniciando protocolo de recuperación de colapso")
+    
+    # Extraer información mínima esencial
+    chapter_title = chapter_details.get("title", "capítulo actual")
+    
+    # 1. Intentar con un prompt ultra minimalista
+    emergency_prompt = f"""
+    Escribe un solo párrafo corto para continuar una historia.
+    
+    Tema: {chapter_title}
+    
+    IMPORTANTE:
+    - Solo texto narrativo en español
+    - Máximo 3 frases
+    - No menciones capítulos ni estructura
+    - No uses asteriscos ni formatos especiales
+    """
+    
+    try:
+        # Usar temperatura baja para maximizar coherencia
+        response = llm(emergency_prompt, temperature=0.2, max_tokens=150)
+        clean_content = clean_think_tags(extract_content_from_llm_response(response))
+        
+        # Verificar si el contenido es mínimamente aceptable
+        if len(clean_content) > 50 and "capítulo" not in clean_content.lower():
+            print_progress("✅ Recuperación exitosa con prompt minimalista")
+            return clean_content
+            
+    except Exception:
+        # Si falla, continuar con siguiente estrategia
+        pass
+    
+    # 2. Texto de contingencia completamente predefinido
+    if section_position == "inicio":
+        return f"La historia continuaba desarrollándose en {chapter_title}. Los personajes se enfrentaban a nuevos desafíos mientras avanzaban en su camino."
+    elif section_position == "medio":
+        return f"La tensión aumentaba a medida que los acontecimientos se desarrollaban. Cada paso traía nuevas revelaciones que cambiarían el curso de los eventos."
+    else:  # final
+        return f"A medida que esta parte de la historia llegaba a su punto culminante, quedaba claro que nada volvería a ser igual. El futuro estaba lleno de incertidumbre y posibilidades."
 
 class BaseChain:
     PROMPT_TEMPLATE = ""

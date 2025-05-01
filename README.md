@@ -38,11 +38,16 @@ Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fanta
 
 ## ⚙️ Configuración Rápida
 
-git clone https://github.com/tu_usuario/tu_repositorio.git
-cd tu_repositorio
+git clone [https://github.com/kroryan/Generador-de-libros-IA-cli](https://github.com/kroryan/Generador-de-libros-IA-cli).git
+cd Generador-de-libros-IA-cli
 pip install -r requirements.txt
-python src/server.py
+python src/app.py --web  #se iniciara el modo web, este modo no es recomendado ya que la web aun no esta muy pulida tambien puedes usar 
 Visita `http://localhost:5000`
+
+o tambien para la consola:
+
+ python src/app.py 
+
 
 ---
 
@@ -79,7 +84,7 @@ Utiliza lenguaje metafórico y descripciones vívidas.
 | Proveedor       | Modelos Ejemplo         | Requisitos         |
 |-----------------|-------------------------|--------------------|
 | Ollama (Local)  | llama3, mistral         | Servidor Ollama    |
-| OpenAI          | GPT-4, GPT-3.5          | API Key            |
+| OpenAIcompatible| GPT-4, GPT-3.5          | API Key            |
 | Groq            | Mixtral-8x7b            | API Key            |
 | Anthropic       | Claude-3                | API Key + librería |
 
@@ -108,15 +113,6 @@ OPENAI_MODEL=gpt-4
 
 ---
 
-## 🔍 Solución de Problemas
-
-| Problema                          | Solución                          |
-|-----------------------------------|-----------------------------------|
-| Modelo no muestra pensamientos    | Verificar etiquetas `<think>`     |
-| Selector de modelos vacío         | Actualizar lista + verificar .env |
-| Errores de generación             | Reducir tamaño del libro          |
-
----
 
 ## 🚧 Desarrollo Futuro
 

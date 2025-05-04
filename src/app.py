@@ -81,7 +81,7 @@ def run_cli_generation(model=None):
         print(f"\nIdeas generadas para {len(idea_dict)} capítulos")
 
         print_step("Escribiendo el libro")
-        book = write_book(genre, style, profile, title, framework, summaries_dict, idea_dict)
+        book = write_book(genre, style, profile, title, framework, summaries_dict, idea_dict, chapter_summaries={})
         print("\nContenido del libro generado")
 
         print_step("Guardando el documento final")

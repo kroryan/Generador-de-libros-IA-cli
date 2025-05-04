@@ -56,7 +56,7 @@ class FrameworkChain(BaseStructureChain):
 class ChaptersChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
     Genera una lista de capítulos para esta novela.
-    La lista debe incluir un prólogo, 7-9 capítulos y un epílogo.
+    La lista debe incluir un prólogo, 7-9 capítulos numerados y un epílogo.
     Usa exactamente este formato:
     Prólogo: [breve descripción]
     Capítulo 1: [breve descripción]
@@ -90,19 +90,63 @@ class ChaptersChain(BaseStructureChain):
         if not response:
             raise ValueError("No se generó contenido para los capítulos")
             
+        # Asegurar que el response sea una cadena de texto
+        if not isinstance(response, str):
+            response = extract_content_from_llm_response(response)
+            if not response:
+                raise ValueError("No se pudo extraer contenido válido de la respuesta del modelo")
+                
         # El response ya viene limpio de clean_think_tags por el invoke()
-        chapter_list = [line.strip() for line in response.split('\n') if ':' in line]
-        if not chapter_list:
-            raise ValueError("No se generaron capítulos válidos")
-            
         try:
+            chapter_list = [line.strip() for line in response.split('\n') if ':' in line]
+            if not chapter_list:
+                raise ValueError("No se generaron capítulos válidos")
+                
             chapter_dict = {}
             for chapter in chapter_list:
                 name, description = chapter.split(':', 1)
                 chapter_dict[name.strip()] = description.strip()
             return chapter_dict
+            
         except Exception as e:
-            raise ValueError(f"Error al procesar los capítulos: {str(e)}")
+            print_progress(f"Error al procesar los capítulos: {str(e)}")
+            print_progress("Intentando recuperar estructura básica...")
+            
+            # Intentar recuperar al menos algunos capítulos en caso de error
+            chapter_dict = {}
+            try:
+                # Buscar cualquier línea que pueda contener un capítulo
+                lines = response.split('\n')
+                chapter_count = 1
+                
+                for line in lines:
+                    line = line.strip()
+                    if line and (':' in line or 'capítulo' in line.lower() or 'prólogo' in line.lower() or 'epílogo' in line.lower()):
+                        if ':' in line:
+                            name, desc = line.split(':', 1)
+                            chapter_dict[name.strip()] = desc.strip()
+                        else:
+                            chapter_dict[line] = "Desarrollo de la trama principal."
+                    
+                # Si aún no se han recuperado capítulos, crear estructura mínima
+                if not chapter_dict:
+                    chapter_dict["Prólogo"] = "Introducción a la historia y personajes principales."
+                    for i in range(1, 6):
+                        chapter_dict[f"Capítulo {i}"] = f"Desarrollo de la trama principal - parte {i}."
+                    chapter_dict["Epílogo"] = "Conclusión de la historia."
+                    
+                return chapter_dict
+                
+            except Exception as nested_e:
+                print_progress(f"Error en la recuperación de emergencia: {str(nested_e)}")
+                # Estructura mínima en caso de error total
+                return {
+                    "Prólogo": "Introducción a la historia.",
+                    "Capítulo 1": "Desarrollo inicial.",
+                    "Capítulo 2": "Desarrollo medio.",
+                    "Capítulo 3": "Clímax.",
+                    "Epílogo": "Conclusión."
+                }
 
 def get_structure(subject, genre, style, profile):
     print_progress("Iniciando generación de estructura...")

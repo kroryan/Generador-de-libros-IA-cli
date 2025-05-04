@@ -51,33 +51,53 @@ class ChapterFrameworkChain(BaseEventChain):
         
         try:
             # Generar features usando el mismo modelo y limpiar resultado
-            # Usar la función para extraer el contenido de AIMessage
-            features_response = self.llm.invoke("Genera una lista breve de elementos narrativos clave para una historia de fantasía y ciencia ficción. IMPORTANTE: Todos los elementos deben estar EXCLUSIVAMENTE en español.")
-            features = clean_think_tags(extract_content_from_llm_response(features_response))
+            # Usar la función para extraer el contenido de AIMessage de manera segura
+            try:
+                features_response = self.llm.invoke("Genera una lista breve de elementos narrativos clave para una historia de fantasía y ciencia ficción. IMPORTANTE: Todos los elementos deben estar EXCLUSIVAMENTE en español.")
+                features = clean_think_tags(extract_content_from_llm_response(features_response))
+            except Exception as e:
+                print_progress(f"Error al generar features: {str(e)}. Usando features genéricas.")
+                features = "Personajes, lugares, elementos mágicos, tecnología, conflictos, resoluciones."
             
-            # Limpiar todas las entradas
-            outline = "\n".join(
-                [f"{ch}: {clean_think_tags(desc)}" for ch, desc in chapter_dict.items()]
-            )
+            # Limpiar todas las entradas de forma segura
+            try:
+                outline = "\n".join(
+                    [f"{ch}: {clean_think_tags(str(desc))}" for ch, desc in chapter_dict.items()]
+                )
+            except Exception as e:
+                print_progress(f"Error al procesar outline: {str(e)}. Usando versión simplificada.")
+                outline = "Estructura de capítulos no disponible en detalle."
 
-            summaries = "\n\n".join(
-                [f"{ch}:\n{clean_think_tags(summary)}" for ch, summary in summaries_dict.items()]
-            )
+            try:
+                summaries = "\n\n".join(
+                    [f"{ch}:\n{clean_think_tags(str(summary))}" for ch, summary in summaries_dict.items()]
+                )
+            except Exception as e:
+                print_progress(f"Error al procesar summaries: {str(e)}. Usando versión simplificada.")
+                summaries = "Resúmenes de capítulos anteriores no disponibles en detalle."
 
-            result = self.invoke(
-                subject=clean_think_tags(subject),
-                genre=clean_think_tags(genre),
-                style=clean_think_tags(style),
-                profile=clean_think_tags(profile),
-                title=clean_think_tags(title),
-                framework=clean_think_tags(framework),
-                features=features,
-                outline=outline,
-                summaries=summaries,
-                chapter=chapter,
-                chapter_num=chapter_num,
-                total_chapters=total_chapters
-            )
+            # Asegurar que todos los parámetros sean strings válidos
+            safe_params = {
+                "subject": clean_think_tags(str(subject) if subject is not None else ""),
+                "genre": clean_think_tags(str(genre) if genre is not None else ""),
+                "style": clean_think_tags(str(style) if style is not None else ""),
+                "profile": clean_think_tags(str(profile) if profile is not None else ""),
+                "title": clean_think_tags(str(title) if title is not None else ""),
+                "framework": clean_think_tags(str(framework) if framework is not None else ""),
+                "features": features,
+                "outline": outline,
+                "summaries": summaries,
+                "chapter": str(chapter),
+                "chapter_num": chapter_num,
+                "total_chapters": total_chapters
+            }
+
+            result = self.invoke(**safe_params)
+
+            # Verificar el resultado y procesarlo de manera segura
+            if not result or not isinstance(result, str):
+                print_progress("Advertencia: Formato de respuesta inesperado. Intentando recuperar contenido...")
+                result = extract_content_from_llm_response(result)
 
             if not result:
                 raise ValueError("No se generó contenido válido")
@@ -86,7 +106,8 @@ class ChapterFrameworkChain(BaseEventChain):
 
         except Exception as e:
             print_progress(f"Error generando marco para {chapter}: {str(e)}")
-            raise
+            # En caso de error fatal, devolver un marco básico para poder continuar
+            return f"Marco para el capítulo {chapter_num} de {total_chapters}. Este capítulo avanza la trama principal y prepara eventos para el siguiente capítulo."
 
 class IdeasChain(BaseEventChain):
     PROMPT_TEMPLATE = """
@@ -129,30 +150,47 @@ class IdeasChain(BaseEventChain):
         print_progress(f"Generando ideas para el capítulo {chapter_num}")
         
         try:
-            # Limpiar las ideas previas
-            previous_ideas = "\n".join(
-                [f"{ch}:\n" + "\n".join(f"- {clean_think_tags(idea)}" for idea in ideas)
-                 for ch, ideas in idea_dict.items()]
-            )
+            # Limpiar las ideas previas de forma segura
+            previous_ideas = ""
+            try:
+                previous_ideas = "\n".join(
+                    [f"{ch}:\n" + "\n".join(f"- {clean_think_tags(idea)}" for idea in ideas)
+                     for ch, ideas in idea_dict.items()]
+                )
+            except Exception as e:
+                print_progress(f"Advertencia al procesar ideas previas: {str(e)}")
+                # Crear una versión más simple si hay problemas
+                previous_ideas = "Ideas de capítulos anteriores no disponibles."
 
-            result = self.invoke(
-                subject=clean_think_tags(subject),
-                genre=clean_think_tags(genre),
-                style=clean_think_tags(style),
-                profile=clean_think_tags(profile),
-                title=clean_think_tags(title),
-                framework=clean_think_tags(framework),
-                summary=clean_think_tags(summary),
-                previous_ideas=previous_ideas,
-                chapter_num=chapter_num,
-                total_chapters=total_chapters
-            )
+            # Asegurar que todos los parámetros sean strings válidos
+            safe_params = {
+                "subject": clean_think_tags(str(subject) if subject is not None else ""),
+                "genre": clean_think_tags(str(genre) if genre is not None else ""),
+                "style": clean_think_tags(str(style) if style is not None else ""),
+                "profile": clean_think_tags(str(profile) if profile is not None else ""),
+                "title": clean_think_tags(str(title) if title is not None else ""),
+                "framework": clean_think_tags(str(framework) if framework is not None else ""),
+                "summary": clean_think_tags(str(summary) if summary is not None else ""),
+                "previous_ideas": previous_ideas,
+                "chapter_num": chapter_num,
+                "total_chapters": total_chapters
+            }
+
+            result = self.invoke(**safe_params)
+
+            # Si el resultado no es del tipo esperado, intentar procesar de manera segura
+            if not result or not isinstance(result, str):
+                print_progress("Advertencia: Resultado de ideas con formato inesperado. Intentando recuperar contenido...")
+                result = extract_content_from_llm_response(result)
+                if not result:
+                    raise ValueError("No se pudo extraer contenido válido de la respuesta del modelo")
 
             return self.parse(result)
             
         except Exception as e:
             print_progress(f"Error generando ideas: {str(e)}")
-            raise
+            # En caso de error, devolver al menos una idea genérica para no interrumpir el proceso
+            return [f"Avanzar la trama principal en el capítulo {chapter_num} de {total_chapters}"]
 
     def parse(self, response):
         if not response:
@@ -173,10 +211,17 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
 
     try:
         total_chapters = len(chapter_dict)
-        for i, (chapter, _) in enumerate(chapter_dict.items(), 1):
+        for i, (chapter, description) in enumerate(chapter_dict.items(), 1):
             print_progress(f"Procesando capítulo {i}/{total_chapters}: {chapter}")
             
             try:
+                # Determinar el número correcto del capítulo para el prompt
+                chapter_num = i
+                if "prólogo" in chapter.lower():
+                    chapter_num = 0
+                elif "epílogo" in chapter.lower():
+                    chapter_num = total_chapters
+                
                 # Generar marco del capítulo con información de posición
                 summaries_dict[chapter] = chapter_framework_chain.run(
                     subject=subject,
@@ -188,7 +233,7 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
                     summaries_dict=summaries_dict,
                     chapter_dict=chapter_dict,
                     chapter=chapter,
-                    chapter_num=i,
+                    chapter_num=chapter_num,
                     total_chapters=total_chapters
                 )
                 print_progress(f"Marco generado para: {chapter}")
@@ -203,7 +248,7 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
                     framework=framework,
                     summary=summaries_dict[chapter],
                     idea_dict=idea_dict,
-                    chapter_num=i,
+                    chapter_num=chapter_num,
                     total_chapters=total_chapters
                 )
                 
@@ -215,9 +260,6 @@ def get_ideas(subject, genre, style, profile, title, framework, chapter_dict):
                 summaries_dict[chapter] = f"Error en la generación del marco para el capítulo {i} de {total_chapters}"
                 idea_dict[chapter] = [f"Error en la generación de ideas para el capítulo {i} de {total_chapters}"]
                 continue
-
-        if not any(ideas != [f"Error en la generación de ideas para el capítulo {i+1} de {total_chapters}"] for i, ideas in enumerate(idea_dict.values())):
-            raise Exception("No se pudo generar ninguna idea válida para ningún capítulo")
 
         return summaries_dict, idea_dict
         

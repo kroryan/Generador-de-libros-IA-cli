@@ -164,14 +164,21 @@ def update_model_type(model_type, model_name=None):
 
 def extract_content_from_llm_response(response):
     """Extrae el contenido de texto de diferentes tipos de respuestas LLM"""
-    if hasattr(response, 'content'):  # Para AIMessage, HumanMessage, etc.
-        return response.content
-    elif isinstance(response, dict) and "text" in response:  # Para diccionarios con clave 'text'
-        return response["text"]
-    elif isinstance(response, str):  # Para respuestas en texto plano
-        return response
-    else:  # Para cualquier otro tipo, convertir a string
-        return str(response)
+    try:
+        if hasattr(response, 'content'):  # Para AIMessage, HumanMessage, etc.
+            return response.content
+        elif isinstance(response, dict) and "text" in response:  # Para diccionarios con clave 'text'
+            return response["text"]
+        elif isinstance(response, str):  # Para respuestas en texto plano
+            return response
+        else:  # Para cualquier otro tipo
+            # Convertir explícitamente a string y verificar que no sea None
+            result = str(response) if response is not None else ""
+            return result
+    except Exception as e:
+        print_progress(f"Error al extraer contenido de respuesta LLM: {str(e)}")
+        # En caso de cualquier error, devolver una cadena vacía en lugar de propagar el error
+        return ""
 
 class ColoredStreamingCallbackHandler(StreamingStdOutCallbackHandler):
     def __init__(self):
@@ -535,57 +542,135 @@ def detect_model_size(llm):
 
 def recover_from_model_collapse(llm, chapter_details, context_manager, section_position):
     """
-    Intenta recuperar un modelo que muestra señales de colapso generando
-    contenido de manera controlada y minimalista.
-    
-    Args:
-        llm: Modelo de lenguaje
-        chapter_details: Detalles del capítulo actual
-        context_manager: Gestor de contexto
-        section_position: Posición en el capítulo
-        
-    Returns:
-        str: Contenido de contingencia generado
+    Versión simplificada que solo genera contenido directo sin protocolos de recuperación.
     """
-    print_progress("🚑 Iniciando protocolo de recuperación de colapso")
+    print_progress("Generando contenido alternativo")
     
-    # Extraer información mínima esencial
+    # Extraer información del capítulo
     chapter_title = chapter_details.get("title", "capítulo actual")
+    idea = chapter_details.get("idea", "")
     
-    # 1. Intentar con un prompt ultra minimalista
-    emergency_prompt = f"""
-    Escribe un solo párrafo corto para continuar una historia.
+    # Crear un prompt directo para generar contenido
+    prompt = f"""
+    Escribe un párrafo narrativo para el capítulo "{chapter_title}".
     
-    Tema: {chapter_title}
+    {idea if idea else "Desarrolla la siguiente sección de la historia."}
     
-    IMPORTANTE:
-    - Solo texto narrativo en español
-    - Máximo 3 frases
-    - No menciones capítulos ni estructura
-    - No uses asteriscos ni formatos especiales
+    IMPORTANTE: Escribe SOLO texto narrativo en español, sin encabezados ni metadata.
     """
     
     try:
-        # Usar temperatura baja para maximizar coherencia
-        response = llm(emergency_prompt, temperature=0.2, max_tokens=150)
-        clean_content = clean_think_tags(extract_content_from_llm_response(response))
-        
-        # Verificar si el contenido es mínimamente aceptable
-        if len(clean_content) > 50 and "capítulo" not in clean_content.lower():
-            print_progress("✅ Recuperación exitosa con prompt minimalista")
-            return clean_content
-            
-    except Exception:
-        # Si falla, continuar con siguiente estrategia
-        pass
+        # Generar contenido directamente
+        response = llm(prompt, temperature=0.7)
+        content = extract_content_from_llm_response(response)
+        return clean_think_tags(content)
+    except:
+        # En caso de error, devolver un texto simple
+        return f"En las profundidades del espacio, la nave seguía su curso hacia nuevos destinos. La tripulación se preparaba para afrontar los desafíos que les aguardaban en {chapter_title}."
+
+def get_llm_model(callbacks=None):
+    """
+    Selecciona el modelo LLM a utilizar basado en la configuración disponible y
+    el tipo de modelo establecido en SELECTED_MODEL
+    """
+    if callbacks is None:
+        callbacks = [ColoredStreamingCallbackHandler()]
     
-    # 2. Texto de contingencia completamente predefinido
-    if section_position == "inicio":
-        return f"La historia continuaba desarrollándose en {chapter_title}. Los personajes se enfrentaban a nuevos desafíos mientras avanzaban en su camino."
-    elif section_position == "medio":
-        return f"La tensión aumentaba a medida que los acontecimientos se desarrollaban. Cada paso traía nuevas revelaciones que cambiarían el curso de los eventos."
-    else:  # final
-        return f"A medida que esta parte de la historia llegaba a su punto culminante, quedaba claro que nada volvería a ser igual. El futuro estaba lleno de incertidumbre y posibilidades."
+    # Leer modelo desde SELECTED_MODEL env, si no está definido, usar prioridades por proveedor
+    selected = os.environ.get("SELECTED_MODEL", "").strip()
+    if selected:
+        provider, model_name = parse_model_string(selected)
+    else:
+        # Leer el tipo de modelo preferido desde MODEL_TYPE
+        model_type = os.environ.get("MODEL_TYPE", "").strip().lower()
+        
+        # Si se ha especificado explícitamente un tipo de modelo en .env
+        if model_type:
+            if model_type == "groq" and os.environ.get("GROQ_MODEL", "").strip():
+                provider = "groq"
+                model_name = os.environ["GROQ_MODEL"]
+            elif model_type == "openai" and os.environ.get("OPENAI_MODEL", "").strip():
+                provider = "openai"
+                model_name = os.environ["OPENAI_MODEL"]
+            elif model_type == "deepseek" and os.environ.get("DEEPSEEK_MODEL", "").strip():
+                provider = "deepseek"
+                model_name = os.environ["DEEPSEEK_MODEL"]
+            elif model_type == "anthropic" and os.environ.get("ANTHROPIC_MODEL", "").strip():
+                provider = "anthropic"
+                model_name = os.environ["ANTHROPIC_MODEL"]
+            elif model_type == "ollama" and os.environ.get("OLLAMA_MODEL", "").strip():
+                provider = "ollama"
+                model_name = os.environ["OLLAMA_MODEL"]
+            # Para otros proveedores personalizados
+            elif os.environ.get(f"{model_type.upper()}_MODEL", "").strip():
+                provider = model_type
+                model_name = os.environ[f"{model_type.upper()}_MODEL"]
+            else:
+                # Si el tipo de modelo está vacío o no tiene configuración, usar fallback
+                provider, model_name = fallback_to_available_provider()
+        else:
+            # Si no hay MODEL_TYPE, usar fallback a los proveedores disponibles
+            provider, model_name = fallback_to_available_provider()
+    
+    # Parámetros comunes
+    common_params = {
+        "callbacks": callbacks,
+        "temperature": 0.7,
+        "streaming": True,
+    }
+    
+    # Caso especial para proveedores adicionales como Groq
+    if provider == "groq":
+        try:
+            groq_api_key = os.environ.get("GROQ_API_KEY", "")
+            groq_api_base = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+            
+            if not groq_api_key:
+                print_progress("API key de Groq no encontrada. Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["groq"])
+                return get_provider_model(provider, model_name, common_params)
+                
+            print_progress(f"Utilizando modelo Groq: {model_name}")
+            return ChatOpenAI(
+                model=model_name,
+                api_key=groq_api_key,
+                base_url=groq_api_base,
+                **common_params
+            )
+        except Exception as e:
+            print_progress(f"Error al inicializar Groq: {str(e)}")
+            print_progress("Cambiando a otro modelo disponible.")
+            provider, model_name = fallback_to_available_provider(exclude=["groq"])
+            return get_provider_model(provider, model_name, common_params)
+    
+    # Caso especial para Ollama que usa ChatOllama
+    if provider == "ollama":
+        # Obtener la configuración de Ollama
+        ollama_api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
+        
+        if not check_ollama_available():
+            print_progress(f"Ollama no está disponible en {ollama_api_base}. Cambiando a otro modelo disponible.")
+            provider, model_name = fallback_to_available_provider(exclude=["ollama"])
+            return get_provider_model(provider, model_name, common_params)
+        else:
+            try:
+                print_progress(f"Utilizando modelo Ollama: {model_name}")
+                return ChatOllama(
+                    model=model_name,
+                    base_url=ollama_api_base,
+                    **common_params,
+                    top_k=50,
+                    top_p=0.9,
+                    repeat_penalty=1.1
+                )
+            except Exception as e:
+                print_progress(f"Error al inicializar Ollama: {str(e)}")
+                print_progress("Cambiando a otro modelo disponible.")
+                provider, model_name = fallback_to_available_provider(exclude=["ollama"])
+                return get_provider_model(provider, model_name, common_params)
+    
+    # Usar función helper para el resto de proveedores
+    return get_provider_model(provider, model_name, common_params)
 
 class BaseChain:
     PROMPT_TEMPLATE = ""

@@ -131,8 +131,8 @@ def run_web_interface():
     print("\nNavega a http://localhost:5000/ para acceder a la interfaz web")
     
     # Iniciar el servidor web usando el modo threading (sin gevent)
-    # Eliminamos los parámetros host y port para usar los valores por defecto que son seguros
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    # Escuchar en 0.0.0.0:5000 para ser accesible desde Docker
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
 
 if __name__ == "__main__":
     import argparse

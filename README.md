@@ -75,7 +75,35 @@ Para el modo web, visita `http://localhost:5000` en tu navegador.
 
 ---
 
-## 💻 Uso en Línea de Comandos
+## � Uso con Docker
+
+Puedes ejecutar la aplicación dentro de un contenedor Docker para facilitar su despliegue.
+
+1) Construir la imagen (desde la raíz del proyecto):
+
+```powershell
+docker build -t generador-libros:latest .
+```
+
+2) Ejecutar el contenedor (montando un archivo `.env` en la raíz del proyecto y el volumen `docs` para salidas):
+
+```powershell
+docker run --rm -p 5000:5000 -v ${PWD}\.env:/app/.env:ro -v ${PWD}\docs:/app/docs generador-libros:latest
+```
+
+3) Usar docker-compose (recomendado para desarrollo):
+
+```powershell
+docker compose up --build
+```
+
+Notas:
+- No incluyas tus claves/API keys dentro de la imagen. Usa un archivo `.env` en la raíz y móntalo como volumen (ya está configurado en `docker-compose.yml`).
+- El servicio expone el puerto `5000` por defecto.
+- Los archivos de salida se escribirán en la carpeta `docs/` en tu host gracias al volumen.
+
+
+## �💻 Uso en Línea de Comandos
 
 El programa ofrece una interfaz de línea de comandos potente con selección explícita de modelos:
 

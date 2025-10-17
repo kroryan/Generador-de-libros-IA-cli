@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  generador:
+    build: .
+    container_name: generador_libros
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./docs:/app/docs
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    tty: true
+    # Para ejecutar en modo consola: overridear command en docker-compose.override.yml o con `docker compose run --rm generador python src/app.py`

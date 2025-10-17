@@ -517,4 +517,4 @@ if __name__ == '__main__':
     os.makedirs(os.path.join(parent_dir, 'docs'), exist_ok=True)
     
     # Iniciar el servidor web
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)

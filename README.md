@@ -13,6 +13,14 @@ Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fanta
 
 ---
 
+## 🆕 Actualizaciones recientes (Octubre 2025)
+
+- 🌟 **Streaming en tiempo real mejorado**: Ahora el texto se transmite directamente sin fragmentación ni modificaciones.
+- 🎨 **Separación visual de pensamientos y respuestas**: Los pensamientos del modelo se muestran en magenta y las respuestas en cian.
+- 🛠️ **Lógica simplificada**: Eliminación de procesamiento innecesario para garantizar una experiencia más fluida.
+- 🚀 **Optimización de la interfaz web**: Mejoras en el diseño para una experiencia de usuario más intuitiva.
+
+
 ## 🆕 Actualizaciones recientes (Mayo 2025)
 
 - 💾 **Sistema de puntos de guardado (savepoints)**: Implementación robusta que evita pérdidas de contexto durante la generación de textos largos

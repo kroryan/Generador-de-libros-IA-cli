@@ -3,7 +3,7 @@
   <h1 align="center">📚 Generador de Novelas de Fantasía con LLMs</h1>
 </p>
 
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)
+![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/Generador-de-libros-IA-cli)
 
 ## ✨ Introducción
 

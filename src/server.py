@@ -25,14 +25,33 @@ app = Flask(__name__,
             template_folder=os.path.join(parent_dir, 'templates'),
             static_folder=os.path.join(parent_dir, 'templates'))
 
+# FASE 4: Usar configuración centralizada para SocketIO
+from config.defaults import get_config
+
+config = get_config()
+socketio_config = config.socketio
+
 # Utilizar el servidor integrado de werkzeug para evitar problemas de monkey patching
 socketio = SocketIO(
     app, 
-    cors_allowed_origins="*", 
-    async_mode='threading',
-    ping_interval=25,        # Latido cada 25 segundos para mantener la conexión viva
-    ping_timeout=259200      # Timeout de 72 horas (en segundos)
+    cors_allowed_origins=socketio_config.cors_allowed_origins, 
+    async_mode=socketio_config.async_mode.value,
+    ping_interval=socketio_config.ping_interval,
+    ping_timeout=socketio_config.ping_timeout  # CRÍTICO: Cambiado de 72h (259200) a 1h (3600)
 )
+
+# FASE 4: Agregar observers al state_manager (necesita estar después de socketio)
+# Importar después de socketio para evitar importación circular
+from generation_state import SocketIOObserver, LoggingObserver
+
+# Registrar observers
+def _init_state_observers():
+    """Inicializa observers del estado. Debe llamarse después de definir socketio."""
+    from generation_state import state_manager
+    state_manager.add_observer(SocketIOObserver(socketio))
+    state_manager.add_observer(LoggingObserver())
+
+_init_state_observers()
 
 # Función para limpiar códigos de escape ANSI
 def clean_ansi_codes(text):
@@ -214,19 +233,17 @@ def get_available_models():
     
     return all_models
 
-# Estado global para seguimiento del progreso
-generation_state = {
-    'status': 'idle',
-    'title': '',
-    'current_step': '',
-    'progress': 0,
-    'chapter_count': 0,
-    'current_chapter': 0,
-    'error': None,
-    'book_ready': False,
-    'file_path': '',
-    'output_format': 'docx'
-}
+# FASE 4: Reemplazar diccionario global con GenerationStateManager
+from generation_state import (
+    GenerationStateManager,
+    GenerationStatus,
+    SocketIOObserver,
+    LoggingObserver
+)
+
+# Crear gestor de estado con observers
+state_manager = GenerationStateManager()
+# Se agregará el SocketIOObserver después de que socketio esté definido
 
 @app.route('/')
 def index():
@@ -242,21 +259,13 @@ def get_models():
 
 @app.route('/generate', methods=['POST'])
 def generate():
-    # Reiniciar el estado de generación
-    global generation_state
-    generation_state = {
-        'status': 'starting',
-        'title': '',
-        'current_step': 'Iniciando generación...',
-        'progress': 0,
-        'chapter_count': 0,
-        'current_chapter': 0,
-        'error': None,
-        'book_ready': False,
-        'file_path': '',
-        'output_format': 'docx'
-    }
-    socketio.emit('status_update', generation_state)
+    # FASE 4: Usar state_manager en lugar de diccionario global
+    state_manager.reset()
+    state_manager.update_state(
+        status=GenerationStatus.STARTING,
+        current_step='Iniciando generación...',
+        progress=0
+    )
     
     data = request.json
     subject = data.get('subject', 'Aventuras en un mundo cyberpunk')
@@ -272,7 +281,7 @@ def generate():
         output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), output_path.lstrip('./\\'))
     
     # Actualizar el formato de salida en el estado
-    generation_state['output_format'] = output_format
+    state_manager.update_state(output_format=output_format)
 
     # Iniciar el proceso en un hilo separado
     thread = threading.Thread(
@@ -285,43 +294,69 @@ def generate():
     return jsonify({"status": "Generation started", "outputFormat": output_format})
 
 def generate_book(subject, profile, style, genre, model, output_format, output_path):
+    """
+    Genera el libro completo. FASE 4: Usa GenerationStateManager inmutable.
+    """
     # Redireccionar la salida estándar para capturarla
     old_stdout = sys.stdout
     sys.stdout = OutputCapture()
     
     try:
+        # FASE 4: Obtener configuración de rate limiting
+        rate_limit_config = config.rate_limit
+        
         # Paso 1: Configurar el modelo
-        update_generation_state('configuring_model', f'Configurando modelo: {model}', 2)
-        socketio.emit('status_update', generation_state)
-        time.sleep(0.5)  # Pequeña pausa para la UI
+        state_manager.update_state(
+            status=GenerationStatus.CONFIGURING_MODEL,
+            current_step=f'Configurando modelo: {model}',
+            progress=2
+        )
+        time.sleep(rate_limit_config.default_delay)
         
         # Actualizar el modelo seleccionado en utils.py
         print(f"Modelo seleccionado: {model}")
         update_model_name(model)
         
         # Paso 2: Generación de estructura (20%)
-        update_generation_state('generating_structure', 'Generando estructura básica...', 5)
-        socketio.emit('status_update', generation_state)
+        state_manager.update_state(
+            status=GenerationStatus.GENERATING_STRUCTURE,
+            current_step='Generando estructura básica...',
+            progress=5
+        )
         
         title, framework, chapter_dict = get_structure(subject, genre, style, profile)
-        generation_state['title'] = title
-        generation_state['chapter_count'] = len(chapter_dict)
-        update_generation_state('structure_complete', f'Estructura generada: {title}', 20)
-        socketio.emit('status_update', generation_state)
-        time.sleep(0.5)  # Pequeña pausa para la UI
+        
+        state_manager.update_state(
+            status=GenerationStatus.STRUCTURE_COMPLETE,
+            title=title,
+            chapter_count=len(chapter_dict),
+            current_step=f'Estructura generada: {title}',
+            progress=20
+        )
+        time.sleep(rate_limit_config.default_delay)
         
         # Paso 3: Generación de ideas (40%)
-        update_generation_state('generating_ideas', 'Generando ideas para cada capítulo...', 25)
-        socketio.emit('status_update', generation_state)
+        state_manager.update_state(
+            status=GenerationStatus.GENERATING_IDEAS,
+            current_step='Generando ideas para cada capítulo...',
+            progress=25
+        )
         
         summaries_dict, idea_dict = get_ideas(subject, genre, style, profile, title, framework, chapter_dict)
-        update_generation_state('ideas_complete', f'Ideas generadas para {len(idea_dict)} capítulos', 40)
-        socketio.emit('status_update', generation_state)
-        time.sleep(0.5)  # Pequeña pausa para la UI
+        
+        state_manager.update_state(
+            status=GenerationStatus.IDEAS_COMPLETE,
+            current_step=f'Ideas generadas para {len(idea_dict)} capítulos',
+            progress=40
+        )
+        time.sleep(rate_limit_config.default_delay)
         
         # Paso 4: Escritura del libro y generación de resúmenes (85%)
-        update_generation_state('writing_book', 'Escribiendo el libro...', 45)
-        socketio.emit('status_update', generation_state)
+        state_manager.update_state(
+            status=GenerationStatus.WRITING_BOOK,
+            current_step='Escribiendo el libro...',
+            progress=45
+        )
         
         # Inicializar el diccionario de resúmenes de capítulos
         chapter_summaries = {}
@@ -333,13 +368,12 @@ def generate_book(subject, profile, style, genre, model, output_format, output_p
         progress_per_chapter = 40 / total_chapters  # 40% del progreso total distribuido entre capítulos
         
         for i, (chapter, idea_list) in enumerate(idea_dict.items(), 1):
-            generation_state['current_chapter'] = i
-            update_generation_state(
-                'writing_chapter', 
-                f'Escribiendo capítulo {i}/{total_chapters}: {chapter}', 
-                45 + (i-1) * progress_per_chapter
+            state_manager.update_state(
+                status=GenerationStatus.WRITING_BOOK,
+                current_chapter=i,
+                current_step=f'Escribiendo capítulo {i}/{total_chapters}: {chapter}',
+                progress=int(45 + (i-1) * progress_per_chapter)
             )
-            socketio.emit('status_update', generation_state)
             
             # Escribir un solo capítulo a la vez
             chapter_title = summaries_dict[chapter].split('\n')[0] if '\n' in summaries_dict[chapter] else chapter
@@ -363,20 +397,25 @@ def generate_book(subject, profile, style, genre, model, output_format, output_p
                 total_chapters=total_chapters
             )
             
-            update_generation_state(
-                'chapter_complete', 
-                f'Capítulo {i}/{total_chapters} completado', 
-                45 + i * progress_per_chapter
+            state_manager.update_state(
+                status=GenerationStatus.CHAPTER_COMPLETE,
+                current_step=f'Capítulo {i}/{total_chapters} completado',
+                progress=int(45 + i * progress_per_chapter)
             )
-            socketio.emit('status_update', generation_state)
             
-        update_generation_state('writing_complete', 'Contenido del libro generado', 85)
-        socketio.emit('status_update', generation_state)
-        time.sleep(0.5)  # Pequeña pausa para la UI
+        state_manager.update_state(
+            status=GenerationStatus.WRITING_COMPLETE,
+            current_step='Contenido del libro generado',
+            progress=85
+        )
+        time.sleep(rate_limit_config.default_delay)
         
         # Paso 5: Guardado del documento (100%)
-        update_generation_state('saving_document', f'Guardando documento en formato {output_format.upper()}...', 90)
-        socketio.emit('status_update', generation_state)
+        state_manager.update_state(
+            status=GenerationStatus.SAVING_DOCUMENT,
+            current_step=f'Guardando documento en formato {output_format.upper()}...',
+            progress=90
+        )
         
         doc_writer = DocWriter()
         file_path = doc_writer.write_doc(
@@ -397,35 +436,40 @@ def generate_book(subject, profile, style, genre, model, output_format, output_p
             filename = os.path.basename(file_path)
             
             # Generación completada con éxito
-            update_generation_state(
-                'complete', 
-                f'Libro "{title}" completado con éxito y guardado como {filename}', 
-                100
+            state_manager.update_state(
+                status=GenerationStatus.COMPLETE,
+                current_step=f'Libro "{title}" completado con éxito y guardado como {filename}',
+                progress=100,
+                book_ready=True,
+                file_path=download_path
             )
-            generation_state['book_ready'] = True
-            generation_state['file_path'] = download_path
         else:
             # Hubo un error al guardar
-            update_generation_state('error', 'Error al guardar el libro. Generación completada pero el archivo no se encuentra.', 95)
-            generation_state['error'] = 'Archivo no encontrado'
-        
-        socketio.emit('status_update', generation_state)
+            state_manager.update_state(
+                status=GenerationStatus.ERROR,
+                current_step='Error al guardar el libro. Generación completada pero el archivo no se encuentra.',
+                progress=95,
+                error='Archivo no encontrado'
+            )
         
     except Exception as e:
         # Manejar errores
         error_msg = str(e)
-        update_generation_state('error', f'Error: {error_msg}', generation_state['progress'])
-        generation_state['error'] = error_msg
-        socketio.emit('status_update', generation_state)
+        current_progress = state_manager.get_state().progress
+        state_manager.update_state(
+            status=GenerationStatus.ERROR,
+            current_step=f'Error: {error_msg}',
+            progress=current_progress,
+            error=error_msg
+        )
     finally:
         # Restaurar la salida estándar
         sys.stdout.flush()
         sys.stdout = old_stdout
 
-def update_generation_state(status, step, progress):
-    generation_state['status'] = status
-    generation_state['current_step'] = step
-    generation_state['progress'] = progress
+# FASE 4: Función eliminada - usar state_manager.update_state() directamente
+# def update_generation_state(status, step, progress):
+#     Esta función ha sido eliminada. Usar state_manager.update_state() en su lugar.
 
 @app.route('/download/<path:filename>')
 def download(filename):
@@ -455,8 +499,8 @@ def serve_static(filename):
 
 @socketio.on('connect')
 def handle_connect():
-    # Enviar el estado actual al cliente cuando se conecta
-    socketio.emit('status_update', generation_state)
+    # FASE 4: Enviar el estado actual al cliente cuando se conecta
+    socketio.emit('status_update', state_manager.get_state().to_dict())
 
 if __name__ == '__main__':
     # Asegurarse de que exista el directorio docs

@@ -5,6 +5,14 @@ from time import sleep
 import re
 import time  # Importación añadida para usar time.sleep()
 
+# FASE 4: Importar configuración centralizada
+from config.defaults import get_config
+
+# Obtener configuración
+_config = get_config()
+_context_config = _config.context
+_rate_limit_config = _config.rate_limit
+
 class WriterChain(BaseEventChain):
     PROMPT_TEMPLATE = """
     Eres un escritor profesional de {genre} en español.
@@ -65,9 +73,10 @@ class WriterChain(BaseEventChain):
             previous_paragraphs_clean = clean_think_tags(previous_paragraphs)
             current_idea_clean = clean_think_tags(current_idea)
             
+            # FASE 4: Usar configuración en lugar de valores mágicos
             # Optimizar longitud del contexto para evitar sobrecarga
-            if len(previous_paragraphs_clean) > 800:
-                previous_paragraphs_clean = previous_paragraphs_clean[-800:] 
+            if len(previous_paragraphs_clean) > _context_config.limited_context_size:
+                previous_paragraphs_clean = previous_paragraphs_clean[-_context_config.limited_context_size:] 
             
             result = self.invoke(
                 genre=clean_think_tags(genre),
@@ -300,7 +309,8 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     'context_manager': context_manager,
                     'chapter_title': chapter,
                     'summary': chapter_summary if j == 1 else savepoint_summary,  # Usar resumen incremental
-                    'previous_paragraphs': paragraphs_context[-800:] if paragraphs_context else "",
+                    # FASE 4: Usar configuración en lugar de valor mágico 800
+                    'previous_paragraphs': paragraphs_context[-_context_config.limited_context_size:] if paragraphs_context else "",
                     'current_idea': idea,
                     'current_chapter': i,
                     'total_chapters': total_chapters,
@@ -349,10 +359,11 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                 # Actualizar contexto en el gestor y guardar el contenido
                 context_manager.update_chapter_content(chapter, section_content)
                 
+                # FASE 4: Usar configuración en lugar de valores mágicos 5000/3000
                 # Actualizar contexto acumulado (limitar para evitar sobrecarga)
-                if len(paragraphs_context) > 5000:
+                if len(paragraphs_context) > _context_config.max_context_accumulation:
                     # Mantener solo la parte más reciente
-                    paragraphs_context = paragraphs_context[-3000:]
+                    paragraphs_context = paragraphs_context[-_context_config.standard_context_size:]
                     
                 # Añadir nuevo contenido al contexto
                 paragraphs_context += "\n\n" + section_content
@@ -361,8 +372,9 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                 chapter_content.append(section_content)
                 book[chapter].append(section_content)
                 
+                # FASE 4: Usar rate limiting de configuración
                 # Pequeña pausa entre secciones para evitar problemas con APIs
-                time.sleep(0.5)
+                time.sleep(_rate_limit_config.default_delay)
             
             # Al finalizar el capítulo, generar un resumen completo para usar en el siguiente capítulo
             try:

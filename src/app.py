@@ -16,7 +16,11 @@ def run_cli_generation(model=None):
         from publishing import DocWriter
         from model_profiles import model_profile_manager, get_model_context_window
         from utils import update_model_name
-        from utils import update_model_name
+        
+        # FASE 4: Usar configuración centralizada
+        from config.defaults import get_config
+        config = get_config()
+        gen_config = config.generation
 
         # Configurar el modelo LLM si se especificó uno
         if model:
@@ -65,29 +69,11 @@ def run_cli_generation(model=None):
             else:
                 print_step("No se especificó modelo, se usará el configurado en .env o el predeterminado")
 
-        subject = """
-        El tema del libro es una aventura épica que combina fantasía y ciencia ficción. 
-        La historia se desarrolla en un universo donde la magia compleja coexiste con la tecnología avanzada,
-        permitiendo viajes espaciales en naves impulsadas tanto por energía mágica como por tecnología futurista.
-        Los personajes exploran mundos misteriosos, enfrentando desafíos que requieren tanto el dominio de
-        antiguos hechizos como la comprensión de avanzados sistemas tecnológicos.
-        """
-
-        profile = """
-        Esta novela fusiona elementos de fantasía épica y ciencia ficción espacial, creando un universo único
-        donde la magia ancestral y la tecnología avanzada se entrelazan de formas sorprendentes. La historia
-        está dirigida a lectores que disfrutan de mundos complejos donde los límites entre la magia y la ciencia
-        se desdibujan. A través de una narrativa inmersiva, la obra explora temas como el poder, la aventura,
-        el descubrimiento y la coexistencia de diferentes formas de conocimiento.
-
-        La historia integra sistemas mágicos complejos y detallados con conceptos de ciencia ficción como
-        viajes espaciales, civilizaciones alienígenas y tecnología avanzada. Los personajes deben navegar
-        por este mundo dual, donde los hechizos más poderosos pueden amplificar las capacidades de las naves
-        espaciales, y donde antiguas profecías se entrelazan con descubrimientos científicos.
-        """
-
-        style = "Narrativo-Épico-Imaginativo"
-        genre = "Fantasía y Ciencia Ficción"
+        # FASE 4: Usar valores de configuración como defaults
+        subject = gen_config.default_subject
+        profile = gen_config.default_profile
+        style = gen_config.default_style
+        genre = gen_config.default_genre
 
         print_step("Iniciando generación del libro")
         doc_writer = DocWriter()

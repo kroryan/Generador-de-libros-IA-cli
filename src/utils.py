@@ -242,13 +242,20 @@ def get_llm_model(callbacks=None):
     """
     Obtiene un modelo LLM usando el nuevo sistema de proveedores unificado.
     Reemplaza la lógica compleja anterior con un sistema limpio y mantenible.
+    
+    FASE 4: Usa configuración centralizada para todos los parámetros LLM.
     """
     logger.info("Obteniendo modelo LLM usando sistema de proveedores unificado")
     
-    # Parámetros comunes para todos los proveedores
+    # FASE 4: Obtener parámetros de configuración centralizada
+    from config.defaults import get_config
+    config = get_config()
+    llm_config = config.llm
+    
+    # Parámetros comunes para todos los proveedores desde configuración
     common_params = {
-        "temperature": 0.7,
-        "streaming": True,
+        "temperature": llm_config.temperature,
+        "streaming": llm_config.streaming,
     }
     
     # Agregar callbacks si se proporcionan
@@ -433,12 +440,19 @@ def detect_model_size(llm):
 
 class BaseChain:
     PROMPT_TEMPLATE = ""
-    TIMEOUT = 60
 
     def __init__(self) -> None:
-        # Obtener el tipo de modelo actual directamente desde la variable de entorno
-        current_model_type = os.environ.get("SELECTED_MODEL", "ollama")
+        # FASE 4: Usar configuración centralizada
+        from config.defaults import get_config
+        config = get_config()
         
+        self.retry_config = config.retry
+        self.llm_config = config.llm
+        
+        # Usar timeout de configuración
+        self.TIMEOUT = self.retry_config.timeout
+        
+        # Configurar LLM con parámetros de configuración
         self.llm = get_llm_model()
         
         # Inicializar estrategia de reintentos

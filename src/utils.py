@@ -431,34 +431,6 @@ def detect_model_size(llm):
         logger.warning(f"Error en detección de modelo: {e}, usando fallback")
         return "standard"
 
-def recover_from_model_collapse(llm, chapter_details, context_manager, section_position):
-    """
-    Versión simplificada que solo genera contenido directo sin protocolos de recuperación.
-    """
-    print_progress("Generando contenido alternativo")
-    
-    # Extraer información del capítulo
-    chapter_title = chapter_details.get("title", "capítulo actual")
-    idea = chapter_details.get("idea", "")
-    
-    # Crear un prompt directo para generar contenido
-    prompt = f"""
-    Escribe un párrafo narrativo para el capítulo "{chapter_title}".
-    
-    {idea if idea else "Desarrolla la siguiente sección de la historia."}
-    
-    IMPORTANTE: Escribe SOLO texto narrativo en español, sin encabezados ni metadata.
-    """
-    
-    try:
-        # Generar contenido directamente
-        response = llm(prompt, temperature=0.7)
-        content = extract_content_from_llm_response(response)
-        return clean_think_tags(content)
-    except:
-        # En caso de error, devolver un texto simple
-        return f"En las profundidades del espacio, la nave seguía su curso hacia nuevos destinos. La tripulación se preparaba para afrontar los desafíos que les aguardaban en {chapter_title}."
-
 class BaseChain:
     PROMPT_TEMPLATE = ""
     TIMEOUT = 60

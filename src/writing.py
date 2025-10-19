@@ -220,31 +220,9 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
     try:
         total_chapters = len(idea_dict)
         
-        # Ordenar capítulos para procesar Prólogo, capítulos numerados y Epílogo en el orden correcto
-        ordered_chapters = []
-        
-        # Primero añadir el prólogo si existe
-        for chapter in idea_dict.keys():
-            if "prólogo" in chapter.lower():
-                ordered_chapters.append(chapter)
-                break
-        
-        # Luego añadir los capítulos numerados en orden
-        for i in range(1, 20):  # Suficiente para cubrir cualquier número de capítulos
-            for chapter in idea_dict.keys():
-                if f"capítulo {i}" in chapter.lower():
-                    ordered_chapters.append(chapter)
-        
-        # Finalmente añadir el epílogo si existe
-        for chapter in idea_dict.keys():
-            if "epílogo" in chapter.lower():
-                ordered_chapters.append(chapter)
-                break
-        
-        # Para capítulos que no sigan ningún patrón, añadirlos al final
-        for chapter in idea_dict.keys():
-            if chapter not in ordered_chapters:
-                ordered_chapters.append(chapter)
+        # Usar sistema inteligente de ordenamiento O(n log n)
+        from chapter_ordering import sort_chapters_intelligently
+        ordered_chapters = sort_chapters_intelligently(idea_dict)
         
         # Procesar capítulos en el orden establecido
         for i, chapter in enumerate(ordered_chapters, 1):
@@ -411,26 +389,6 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
     except Exception as e:
         print_progress(f"Error general en la escritura del libro: {str(e)}")
         raise  # Propagar el error para detener la ejecución
-
-def generate_chapter_content_for_limited_context(llm, chapter_details, context_manager, max_chunk_size=700):
-    """
-    Versión simplificada que trata a todos los modelos por igual,
-    sin limitaciones por tamaño de contexto.
-    """
-    # Simplemente genera el contenido directamente con el prompt completo
-    print_progress(f"Generando contenido para el capítulo: {chapter_details['title']}")
-    
-    # Crear un prompt simple
-    prompt = f"""
-    Escribe el contenido completo para el capítulo '{chapter_details['title']}' del libro.
-    
-    Ideas para el capítulo: {chapter_details.get('idea', '')}
-    
-    El contenido debe ser detallado, coherente y fluido, desarrollando completamente la narrativa.
-    """
-    
-    # Generar contenido directamente
-    return llm(prompt)
 
 def optimize_prompt_for_limited_context(prompt, max_length=None, preserve_instructions=True):
     """

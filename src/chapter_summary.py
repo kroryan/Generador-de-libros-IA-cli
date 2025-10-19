@@ -62,37 +62,12 @@ class ChapterSummaryChain(BaseEventChain):
 
     def extract_key_segments(self, text, max_segments=3, segment_length=1000):
         """
-        Extrae segmentos clave del texto (inicio, medio y final) de manera más eficiente
-        con segmentos más pequeños.
+        Extrae segmentos clave del texto usando sistema adaptativo.
+        
+        MIGRADO: Ahora usa text_segment_extractor.py para lógica adaptativa.
         """
-        if len(text) <= segment_length * max_segments:
-            return text
-            
-        segments = []
-        
-        # Incluir inicio (establece personajes y escenario)
-        segments.append(text[:segment_length])
-        
-        # Si hay espacio para más de 2 segmentos, incluir segmento del medio
-        if max_segments > 2:
-            # Extraer una sección del medio
-            middle_pos = len(text) // 2
-            middle_start = max(middle_pos - segment_length // 2, segment_length)
-            middle_end = min(middle_start + segment_length, len(text) - segment_length)
-            segments.append(text[middle_start:middle_end])
-        
-        # Incluir final (resoluciones, giros finales)
-        segments.append(text[-segment_length:])
-        
-        # Unir los segmentos con indicadores claros
-        result = "INICIO DEL CAPÍTULO:\n" + segments[0]
-        
-        for i in range(1, len(segments) - 1):
-            result += f"\n\n[...PARTE MEDIA DEL CAPÍTULO...]\n\n{segments[i]}"
-            
-        result += f"\n\n[...FINAL DEL CAPÍTULO...]\n\n{segments[-1]}"
-            
-        return result
+        from text_segment_extractor import extract_key_segments as extract_adaptive
+        return extract_adaptive(text, max_segments, segment_length)
 
     def update_summary_incrementally(self, title, chapter_num, chapter_title, current_summary, new_section, total_chapters=None):
         """Actualiza un resumen existente incorporando nueva información esencial"""

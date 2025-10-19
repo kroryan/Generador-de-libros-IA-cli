@@ -14,6 +14,8 @@ def run_cli_generation(model=None):
         from ideas import get_ideas
         from writing import write_book
         from publishing import DocWriter
+        from model_profiles import model_profile_manager, get_model_context_window
+        from utils import update_model_name
         from utils import update_model_name
 
         # Configurar el modelo LLM si se especificó uno
@@ -24,16 +26,37 @@ def run_cli_generation(model=None):
             provider = model.split(':')[0] if ':' in model else 'ollama'
             os.environ["MODEL_TYPE"] = provider
             
-            # Detectar modelos con contexto limitado
+            # Usar el nuevo sistema de perfiles para detectar configuración del modelo
             model_name = model.split(':')[1] if ':' in model else model
-            if 'deepseek' in model_name.lower():
-                print_step("Detectado modelo Deepseek: configurando modo de contexto limitado")
-                os.environ["MODEL_CONTEXT_SIZE"] = "limited"
-            elif any(small in model_name.lower() for small in ['7b', '8b', '9b']):
-                print_step("Detectado modelo de tamaño pequeño: configurando modo de contexto limitado")
-                os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+            profile = model_profile_manager.detect_model_profile(model_name, provider)
+            
+            if profile:
+                print_step(f"Perfil detectado: {profile.display_name} ({profile.size_category})")
+                
+                # Configurar contexto basado en el perfil del modelo
+                context_window = profile.context_window
+                if context_window < 8192 or profile.size_category == "small":
+                    print_step("Configurando modo de contexto limitado basado en perfil del modelo")
+                    os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+                else:
+                    os.environ["MODEL_CONTEXT_SIZE"] = "standard"
+                    
+                # Configurar parámetros optimizados
+                optimal_params = profile.get_optimal_parameters()
+                for param, value in optimal_params.items():
+                    os.environ[f"MODEL_{param.upper()}"] = str(value)
+                    
             else:
-                os.environ["MODEL_CONTEXT_SIZE"] = "standard"
+                # Fallback para modelos no reconocidos
+                print_step("Modelo no reconocido en base de datos, usando detección por nombre")
+                if 'deepseek' in model_name.lower():
+                    print_step("Detectado modelo Deepseek: configurando modo de contexto limitado")
+                    os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+                elif any(small in model_name.lower() for small in ['7b', '8b', '9b']):
+                    print_step("Detectado modelo de tamaño pequeño: configurando modo de contexto limitado")
+                    os.environ["MODEL_CONTEXT_SIZE"] = "limited"
+                else:
+                    os.environ["MODEL_CONTEXT_SIZE"] = "standard"
         else:
             # Utilizar el MODEL_TYPE del .env si existe
             model_type = os.environ.get("MODEL_TYPE", "").strip()

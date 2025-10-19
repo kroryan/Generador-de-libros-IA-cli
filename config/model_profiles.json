@@ -1,0 +1,328 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-01-19",
+  "description": "Perfiles de modelos LLM con información técnica detallada",
+  "profiles": {
+    "llama3-8b-8192": {
+      "display_name": "Llama 3 8B",
+      "provider": "groq",
+      "size_category": "standard",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "fast",
+      "recommended_use": ["general", "writing", "analysis"],
+      "limitations": ["context_sensitive"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50
+      }
+    },
+    "llama3-70b-8192": {
+      "display_name": "Llama 3 70B",
+      "provider": "groq",
+      "size_category": "large",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "balanced",
+      "recommended_use": ["complex_reasoning", "creative_writing", "analysis"],
+      "limitations": [],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50
+      }
+    },
+    "mixtral-8x7b-32768": {
+      "display_name": "Mixtral 8x7B",
+      "provider": "groq",
+      "size_category": "large",
+      "context_window": 32768,
+      "max_output_tokens": 16384,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "balanced",
+      "recommended_use": ["long_context", "complex_reasoning", "multilingual"],
+      "limitations": [],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50
+      }
+    },
+    "gpt-4": {
+      "display_name": "GPT-4",
+      "provider": "openai",
+      "size_category": "large",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.03,
+      "performance_tier": "premium",
+      "recommended_use": ["complex_reasoning", "creative_writing", "analysis", "coding"],
+      "limitations": ["high_cost"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "gpt-4o": {
+      "display_name": "GPT-4o",
+      "provider": "openai",
+      "size_category": "large",
+      "context_window": 128000,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.015,
+      "performance_tier": "premium",
+      "recommended_use": ["long_context", "complex_reasoning", "creative_writing", "multimodal"],
+      "limitations": ["moderate_cost"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "gpt-3.5-turbo": {
+      "display_name": "GPT-3.5 Turbo",
+      "provider": "openai",
+      "size_category": "standard",
+      "context_window": 16385,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.002,
+      "performance_tier": "fast",
+      "recommended_use": ["general", "writing", "chat"],
+      "limitations": ["limited_reasoning"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "deepseek-chat": {
+      "display_name": "DeepSeek Chat",
+      "provider": "deepseek",
+      "size_category": "large",
+      "context_window": 32768,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.001,
+      "performance_tier": "efficient",
+      "recommended_use": ["general", "coding", "analysis"],
+      "limitations": ["context_sensitive"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95
+      }
+    },
+    "deepseek-reasoner": {
+      "display_name": "DeepSeek Reasoner",
+      "provider": "deepseek",
+      "size_category": "large",
+      "context_window": 32768,
+      "max_output_tokens": 8192,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.001,
+      "performance_tier": "efficient",
+      "recommended_use": ["complex_reasoning", "problem_solving", "analysis"],
+      "limitations": ["slower_response"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.95
+      }
+    },
+    "claude-3-opus": {
+      "display_name": "Claude 3 Opus",
+      "provider": "anthropic",
+      "size_category": "large",
+      "context_window": 200000,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.075,
+      "performance_tier": "premium",
+      "recommended_use": ["long_context", "complex_reasoning", "creative_writing", "analysis"],
+      "limitations": ["high_cost"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "claude-3-sonnet": {
+      "display_name": "Claude 3 Sonnet",
+      "provider": "anthropic",
+      "size_category": "large",
+      "context_window": 200000,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.015,
+      "performance_tier": "balanced",
+      "recommended_use": ["long_context", "general", "writing", "analysis"],
+      "limitations": ["moderate_cost"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "claude-3-haiku": {
+      "display_name": "Claude 3 Haiku",
+      "provider": "anthropic",
+      "size_category": "standard",
+      "context_window": 200000,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0025,
+      "performance_tier": "fast",
+      "recommended_use": ["general", "quick_tasks", "chat"],
+      "limitations": ["limited_reasoning"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 1.0
+      }
+    },
+    "llama2": {
+      "display_name": "Llama 2",
+      "provider": "ollama",
+      "size_category": "standard",
+      "context_window": 4096,
+      "max_output_tokens": 2048,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "local",
+      "recommended_use": ["general", "privacy_sensitive"],
+      "limitations": ["limited_context", "requires_local_setup"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    },
+    "llama3": {
+      "display_name": "Llama 3",
+      "provider": "ollama",
+      "size_category": "standard",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "local",
+      "recommended_use": ["general", "writing", "privacy_sensitive"],
+      "limitations": ["requires_local_setup"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    },
+    "mistral": {
+      "display_name": "Mistral",
+      "provider": "ollama",
+      "size_category": "standard",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "local",
+      "recommended_use": ["general", "multilingual", "privacy_sensitive"],
+      "limitations": ["requires_local_setup"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    },
+    "phi3": {
+      "display_name": "Phi-3",
+      "provider": "ollama",
+      "size_category": "small",
+      "context_window": 4096,
+      "max_output_tokens": 2048,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "local",
+      "recommended_use": ["quick_tasks", "low_resource", "privacy_sensitive"],
+      "limitations": ["limited_context", "basic_reasoning", "requires_local_setup"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    },
+    "gemma-7b": {
+      "display_name": "Gemma 7B",
+      "provider": "ollama",
+      "size_category": "standard",
+      "context_window": 8192,
+      "max_output_tokens": 4096,
+      "supports_streaming": true,
+      "cost_per_1k_tokens": 0.0,
+      "performance_tier": "local",
+      "recommended_use": ["general", "writing", "privacy_sensitive"],
+      "limitations": ["requires_local_setup"],
+      "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "repeat_penalty": 1.1
+      }
+    }
+  },
+  "size_categories": {
+    "small": {
+      "description": "Modelos pequeños (< 10B parámetros)",
+      "typical_context": "2K-4K tokens",
+      "use_cases": ["tareas rápidas", "recursos limitados", "pruebas"],
+      "limitations": ["razonamiento básico", "contexto limitado"]
+    },
+    "standard": {
+      "description": "Modelos estándar (10B-30B parámetros)",
+      "typical_context": "4K-16K tokens",
+      "use_cases": ["uso general", "escritura", "análisis básico"],
+      "limitations": ["razonamiento complejo limitado"]
+    },
+    "large": {
+      "description": "Modelos grandes (30B+ parámetros)",
+      "typical_context": "8K-200K tokens",
+      "use_cases": ["razonamiento complejo", "escritura creativa", "análisis avanzado"],
+      "limitations": ["mayor latencia", "mayor costo"]
+    }
+  },
+  "performance_tiers": {
+    "local": {
+      "description": "Ejecución local con Ollama",
+      "latency": "Variable (depende del hardware)",
+      "cost": "Gratuito",
+      "privacy": "Máxima"
+    },
+    "fast": {
+      "description": "Respuestas rápidas con calidad básica",
+      "latency": "Baja",
+      "cost": "Bajo-Medio",
+      "privacy": "Estándar"
+    },
+    "balanced": {
+      "description": "Balance entre velocidad y calidad",
+      "latency": "Media",
+      "cost": "Medio",
+      "privacy": "Estándar"
+    },
+    "efficient": {
+      "description": "Buena calidad a bajo costo",
+      "latency": "Media",
+      "cost": "Bajo",
+      "privacy": "Estándar"
+    },
+    "premium": {
+      "description": "Máxima calidad y capacidades",
+      "latency": "Media-Alta",
+      "cost": "Alto",
+      "privacy": "Estándar"
+    }
+  }
+}

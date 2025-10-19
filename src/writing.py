@@ -1,5 +1,6 @@
 from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, BaseChain
 from chapter_summary import ChapterSummaryChain, ProgressiveContextManager
+from emergency_prompts import emergency_prompts
 from time import sleep
 import re
 import time  # Importación añadida para usar time.sleep()
@@ -94,10 +95,8 @@ class WriterChain(BaseEventChain):
 def regenerate_problematic_section(writer_chain, context_manager, section_params, max_attempts=3):
     """
     Intenta regenerar una sección que ha mostrado problemas o señales de colapso.
-    Versión simplificada sin sistema de control de contexto.
+    Ahora usa el sistema centralizado de prompts de emergencia.
     """
-    from utils import print_progress
-    
     print_progress("🔄 Intentando regenerar sección problemática...")
     
     # Extractores de parámetros clave
@@ -105,45 +104,26 @@ def regenerate_problematic_section(writer_chain, context_manager, section_params
     chapter_title = section_params.get('chapter_title', 'este capítulo')
     current_idea = section_params.get('current_idea', '')
     
-    for attempt in range(max_attempts):
-        try:
-            print_progress(f"Intento {attempt+1}/{max_attempts} de regeneración")
+    try:
+        # Usar prompt de emergencia centralizado en lugar de lógica de reintentos manual
+        emergency_prompt = emergency_prompts.get_section_regeneration_prompt(
+            context_summary=f"Capítulo: {chapter_title}",
+            previous_content=section_params.get('previous_paragraphs', '')[:200]
+        )
+        
+        # Ejecutar con el sistema de reintentos integrado en BaseChain
+        response = writer_chain.llm.invoke(emergency_prompt)
+        content = clean_think_tags(extract_content_from_llm_response(response))
+        
+        if content and len(content.strip()) > 50:
+            print_progress("✅ Regeneración exitosa usando prompt de emergencia")
+            return content
             
-            # Simplificar parámetros en cada intento
-            if attempt == 1:
-                # Reducir longitud del contenido previo
-                section_params['previous_paragraphs'] = section_params.get('previous_paragraphs', '')[:200]
-                section_params['current_idea'] = section_params.get('current_idea', '')[:100]
-            elif attempt >= 2:
-                # Último intento: usar un prompt directo y simple
-                from utils import clean_think_tags, extract_content_from_llm_response
-                
-                idea_first_line = current_idea.split('\n')[0] if current_idea else ''
-                emergency_prompt = f'''
-                Escribe un párrafo narrativo para continuar esta historia.
-                
-                Capítulo: {chapter_title}
-                Idea a desarrollar: {idea_first_line}
-                
-                IMPORTANTE: Escribe SOLO texto narrativo en español, sin encabezados ni metadata.
-                '''
-                
-                response = writer_chain.llm.invoke(emergency_prompt)
-                return clean_think_tags(extract_content_from_llm_response(response))
-            
-            # Intentar la generación con los parámetros actuales
-            content = writer_chain.run(**section_params)
-            
-            if content and len(content.strip()) > 50:
-                print_progress("✅ Regeneración exitosa")
-                return content
-                
-        except Exception as e:
-            print_progress(f"Error en intento {attempt+1}: {str(e)}")
+    except Exception as e:
+        print_progress(f"Error en regeneración con prompt de emergencia: {str(e)}")
     
-    # Si todos los intentos fallan, usar un texto de contingencia
-    print_progress("⚠️ Usando texto de contingencia tras múltiples fallos")
-    
+    # Si todo falla, usar texto de contingencia
+    print_progress("⚠️ Usando texto de contingencia tras fallo de regeneración")
     return f"La escena continuó desarrollándose. Los personajes avanzaron en su objetivo mientras exploraban {chapter_title}."
 
 def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_summary, new_section, total_chapters=None):
@@ -184,30 +164,37 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
         """
         
         # Usar directamente el LLM para evitar problemas con las clases de resumen
-        for attempt in range(3):  # 3 intentos máximo
+        # BaseChain ahora maneja los reintentos automáticamente, eliminamos lógica manual
+        try:
+            # Invocar directamente al modelo - los reintentos están en BaseChain
+            result = llm.invoke(prompt)
+            # Extraer y limpiar la respuesta
+            text_result = extract_content_from_llm_response(result)
+            updated_summary = clean_think_tags(text_result)
+            
+            # Verificar si el resultado es válido
+            if updated_summary and len(updated_summary) > 20:
+                # Limitar la longitud para evitar resúmenes excesivamente largos
+                if len(updated_summary) > 500:
+                    updated_summary = updated_summary[:500] + "..."
+                return updated_summary
+            else:
+                # Si no hay resultado válido, usar prompt de emergencia
+                emergency_prompt = emergency_prompts.get_summary_emergency_prompt(new_section[:300])
+                emergency_result = llm.invoke(emergency_prompt)
+                return clean_think_tags(extract_content_from_llm_response(emergency_result))
+                    
+        except Exception as e:
+            print_progress(f"Error creando resumen: {str(e)}")
+            # Usar prompt de emergencia como fallback
             try:
-                # Invocar directamente al modelo
-                result = llm.invoke(prompt)
-                # Extraer y limpiar la respuesta
-                text_result = extract_content_from_llm_response(result)
-                updated_summary = clean_think_tags(text_result)
-                
-                # Verificar si el resultado es válido
-                if updated_summary and len(updated_summary) > 20:
-                    # Limitar la longitud para evitar resúmenes excesivamente largos
-                    if len(updated_summary) > 500:
-                        updated_summary = updated_summary[:500] + "..."
-                    return updated_summary
-                    
-                print_progress(f"Intento {attempt+1}: Respuesta inválida o demasiado corta")
-                time.sleep(1)  # Pequeña pausa antes de reintentar
-                    
-            except Exception as e:
-                print_progress(f"Error en intento {attempt+1}: {str(e)}")
-                if attempt < 2:  # Si no es el último intento
-                    wait_time = (attempt + 1) * 2
-                    print_progress(f"Reintentando en {wait_time} segundos...")
-                    time.sleep(wait_time)
+                emergency_prompt = emergency_prompts.get_summary_emergency_prompt(new_section[:300])
+                emergency_result = llm.invoke(emergency_prompt)
+                return clean_think_tags(extract_content_from_llm_response(emergency_result))
+            except:
+                # Si todo falla, devolver el resumen actual sin cambios
+                print_progress("No se pudo generar un nuevo resumen, manteniendo el actual")
+                return current_summary
         
         # Si todos los intentos fallan, devolver el resumen actual sin cambios
         print_progress("No se pudo generar un nuevo resumen, manteniendo el actual")
@@ -345,46 +332,36 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     'chapter_key': chapter
                 }
                 
-                # Usar un sistema de reintentos para casos donde haya problemas
-                max_attempts = 3
-                section_content = None
-                
-                for attempt in range(max_attempts):
-                    try:
-                        # Si no es el primer intento, simplificar la idea y/o el prompt
-                        if attempt > 0:
-                            print_progress(f"⚠️ Reintentando generación (intento {attempt+1}/{max_attempts})...")
-                            # Simplificar contexto en cada reintento
-                            if paragraphs_context:
-                                section_params['previous_paragraphs'] = paragraphs_context[-400:] 
-                            
-                            # En último intento, usar un prompt directo y simple
-                            if attempt == max_attempts - 1:
-                                # Usar directamente el invoke del modelo
-                                emergency_prompt = f"""
-                                Escribe un párrafo narrativo para continuar esta historia.
-                                
-                                Capítulo: {chapter}
-                                Idea a desarrollar: {idea[:100]}
-                                
-                                IMPORTANTE: Escribe SOLO texto narrativo en español, sin encabezados ni metadata.
-                                """
-                                raw_response = writer_chain.llm.invoke(emergency_prompt)
-                                section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
-                                break
-                        
-                        # Intento normal de generación
-                        if attempt < max_attempts - 1:  # No para el último intento, que usa emergencia
-                            section_content = writer_chain.run(**section_params)
-                        
-                        # Verificar si el contenido es válido
-                        if section_content and len(section_content.strip()) >= 50:
-                            break  # Contenido válido, salir del bucle de reintentos
+                # Usar un sistema simplificado sin reintentos manuales
+                try:
+                    # Usar BaseChain que ya tiene reintentos integrados
+                    section_content = writer_chain.run(**section_params)
                     
-                    except Exception as e:
-                        print_progress(f"Error en intento {attempt+1}: {str(e)}")
-                        # Pequeña pausa entre reintentos para evitar problemas de API
-                        time.sleep(1)
+                    # Verificar si el contenido es válido
+                    if section_content and len(section_content.strip()) >= 50:
+                        pass  # Contenido válido, continuar
+                    else:
+                        # Si el contenido no es válido, usar prompt de emergencia
+                        emergency_prompt = emergency_prompts.get_writing_emergency_prompt(
+                            chapter_title=chapter,
+                            idea=idea[:100]
+                        )
+                        raw_response = writer_chain.llm.invoke(emergency_prompt)
+                        section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
+                
+                except Exception as e:
+                    print_progress(f"Error en generación: {str(e)}")
+                    # Usar prompt de emergencia como fallback
+                    emergency_prompt = emergency_prompts.get_writing_emergency_prompt(
+                        chapter_title=chapter,
+                        idea=idea[:100]
+                    )
+                    try:
+                        raw_response = writer_chain.llm.invoke(emergency_prompt)
+                        section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
+                    except:
+                        # Último recurso: texto de respaldo
+                        section_content = f"La historia continuó desarrollándose en {chapter}. Los personajes avanzaron en su objetivo mientras enfrentaban nuevos desafíos."
                 
                 # Si después de todos los intentos no hay contenido válido, usar texto de respaldo
                 if not section_content or len(section_content.strip()) < 50:

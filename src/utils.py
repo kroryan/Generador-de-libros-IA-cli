@@ -10,6 +10,17 @@ import os
 import json
 import requests
 
+# Importar nuevos módulos de infraestructura
+from retry_strategy import RetryStrategy, with_retry
+from circuit_breaker import CircuitBreaker, CircuitBreakerRegistry, with_circuit_breaker
+from emergency_prompts import emergency_prompts
+from provider_chain import provider_chain
+from logging_config import get_logger, print_progress
+from model_profiles import model_profile_manager, detect_model_size as new_detect_model_size
+
+# Logger para este módulo
+logger = get_logger("utils")
+
 # Códigos ANSI para colores
 YELLOW = "\033[93m"
 WHITE = "\033[97m"
@@ -132,12 +143,12 @@ def parse_model_string(model_string):
     Si no hay prefijo de proveedor, asume que es Ollama.
     """
     # Proveedores conocidos que usan el prefijo provider:model
-    known_providers = ["openai", "deepseek", "groq", "anthropic"]
+    known_providers = ["openai", "deepseek", "groq", "anthropic", "ollama"]
     
     if ":" in model_string:
         parts = model_string.split(":", 1)
         if parts[0].lower() in known_providers:
-            # Es un proveedor conocido como openai:gpt-4
+            # Es un proveedor conocido como openai:gpt-4 u ollama:gemma3:latest
             return parts[0].lower(), parts[1]
         else:
             # Es un modelo de Ollama con ":" en su nombre como hf.co/.../model:Q8_0
@@ -245,107 +256,30 @@ def clean_think_tags(text):
 
 def get_llm_model(callbacks=None):
     """
-    Selecciona el modelo LLM a utilizar basado en la configuración disponible y
-    el tipo de modelo establecido en SELECTED_MODEL
+    Obtiene un modelo LLM usando el nuevo sistema de proveedores unificado.
+    Reemplaza la lógica compleja anterior con un sistema limpio y mantenible.
     """
-    if callbacks is None:
-        callbacks = [ColoredStreamingCallbackHandler()]
+    logger.info("Obteniendo modelo LLM usando sistema de proveedores unificado")
     
-    # Leer modelo desde SELECTED_MODEL env, si no está definido, usar prioridades por proveedor
-    selected = os.environ.get("SELECTED_MODEL", "").strip()
-    if selected:
-        provider, model_name = parse_model_string(selected)
-    else:
-        # Leer el tipo de modelo preferido desde MODEL_TYPE
-        model_type = os.environ.get("MODEL_TYPE", "").strip().lower()
-        
-        # Si se ha especificado explícitamente un tipo de modelo en .env
-        if model_type:
-            if model_type == "groq" and os.environ.get("GROQ_MODEL", "").strip():
-                provider = "groq"
-                model_name = os.environ["GROQ_MODEL"]
-            elif model_type == "openai" and os.environ.get("OPENAI_MODEL", "").strip():
-                provider = "openai"
-                model_name = os.environ["OPENAI_MODEL"]
-            elif model_type == "deepseek" and os.environ.get("DEEPSEEK_MODEL", "").strip():
-                provider = "deepseek"
-                model_name = os.environ["DEEPSEEK_MODEL"]
-            elif model_type == "anthropic" and os.environ.get("ANTHROPIC_MODEL", "").strip():
-                provider = "anthropic"
-                model_name = os.environ["ANTHROPIC_MODEL"]
-            elif model_type == "ollama" and os.environ.get("OLLAMA_MODEL", "").strip():
-                provider = "ollama"
-                model_name = os.environ["OLLAMA_MODEL"]
-            # Para otros proveedores personalizados
-            elif os.environ.get(f"{model_type.upper()}_MODEL", "").strip():
-                provider = model_type
-                model_name = os.environ[f"{model_type.upper()}_MODEL"]
-            else:
-                # Si el tipo de modelo está vacío o no tiene configuración, usar fallback
-                provider, model_name = fallback_to_available_provider()
-        else:
-            # Si no hay MODEL_TYPE, usar fallback a los proveedores disponibles
-            provider, model_name = fallback_to_available_provider()
-    
-    # Parámetros comunes
+    # Parámetros comunes para todos los proveedores
     common_params = {
-        "callbacks": callbacks,
         "temperature": 0.7,
         "streaming": True,
     }
     
-    # Caso especial para proveedores adicionales como Groq
-    if provider == "groq":
-        try:
-            groq_api_key = os.environ.get("GROQ_API_KEY", "")
-            groq_api_base = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-            
-            if not groq_api_key:
-                print_progress("API key de Groq no encontrada. Cambiando a otro modelo disponible.")
-                provider, model_name = fallback_to_available_provider(exclude=["groq"])
-                return get_provider_model(provider, model_name, common_params)
-                
-            print_progress(f"Utilizando modelo Groq: {model_name}")
-            return ChatOpenAI(
-                model=model_name,
-                api_key=groq_api_key,
-                base_url=groq_api_base,
-                **common_params
-            )
-        except Exception as e:
-            print_progress(f"Error al inicializar Groq: {str(e)}")
-            print_progress("Cambiando a otro modelo disponible.")
-            provider, model_name = fallback_to_available_provider(exclude=["groq"])
-            return get_provider_model(provider, model_name, common_params)
+    # Agregar callbacks si se proporcionan
+    if callbacks is not None:
+        common_params["callbacks"] = callbacks
     
-    # Caso especial para Ollama que usa ChatOllama
-    if provider == "ollama":
-        # Obtener la configuración de Ollama
-        ollama_api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
+    try:
+        # Usar la nueva cadena de proveedores
+        client = provider_chain.get_client(**common_params)
+        logger.info("Cliente LLM creado exitosamente")
+        return client
         
-        if not check_ollama_available():
-            print_progress(f"Ollama no está disponible en {ollama_api_base}. Cambiando a otro modelo disponible.")
-            provider, model_name = fallback_to_available_provider(exclude=["ollama"])
-            return get_provider_model(provider, model_name, common_params)
-        else:
-            try:
-                print_progress(f"Utilizando modelo Ollama: {model_name}")
-                return ChatOllama(
-                    model=model_name,
-                    base_url=ollama_api_base,
-                    **common_params,
-                    top_k=50,
-                    top_p=0.9,
-                    repeat_penalty=1.1
-                )
-            except Exception as e:
-                print_progress(f"Error al inicializar Ollama: {str(e)}")
-                print_progress("Cambiando a otro modelo disponible.")
-                provider, model_name = fallback_to_available_provider(exclude=["ollama"])
-                return get_provider_model(provider, model_name, common_params)
-    
-    # Usar función helper para el resto de proveedores
-    return get_provider_model(provider, model_name, common_params)
+    except Exception as e:
+        logger.error(f"Error obteniendo modelo LLM: {e}")
+        raise
 
 def get_provider_model(provider, model_name, common_params):
     """Función helper para obtener el modelo de un proveedor específico"""
@@ -491,8 +425,8 @@ def fallback_to_available_provider(exclude=None):
 
 def detect_model_size(llm):
     """
-    Detecta automáticamente el tamaño aproximado del modelo en uso
-    basado en metadatos disponibles o comportamiento.
+    Detecta automáticamente el tamaño del modelo usando el nuevo sistema de perfiles.
+    Reemplaza la detección frágil basada en strings.
     
     Args:
         llm: Instancia del modelo de lenguaje
@@ -501,43 +435,16 @@ def detect_model_size(llm):
         str: Clasificación de tamaño ("small", "standard", "large")
     """
     try:
-        # Intentar obtener información del modelo desde diferentes atributos
-        model_info = ""
+        logger.info("Detectando tamaño de modelo con sistema de perfiles")
         
-        # Para modelos de diferentes bibliotecas, los atributos varían
-        if hasattr(llm, "model_name"):
-            model_info = llm.model_name
-        elif hasattr(llm, "model"):
-            model_info = str(llm.model)
-        elif hasattr(llm, "_llm_type"):
-            model_info = llm._llm_type
-            
-        # Buscar pistas sobre el tamaño en el nombre del modelo
-        model_info = model_info.lower()
+        # Usar la nueva función basada en perfiles
+        result = new_detect_model_size(llm)
         
-        # Detectar tamaño por nombre
-        if any(term in model_info for term in ["7b", "8b", "9b", "tiny", "small", "gemma-2b"]):
-            return "small"
-        elif any(term in model_info for term in ["13b", "14b", "20b", "medium", "gemma-7b"]):
-            return "standard"
-        elif any(term in model_info for term in ["70b", "50b", "33b", "32b", "30b", "large", "claude", "opus", "gpt-4"]):
-            return "large"
-            
-        # Si no podemos determinar por el nombre, intentar inferir
-        # por el comportamiento (respuesta a un prompt corto)
-        test_prompt = "En una sola frase, explica el equilibrio."
-        response = llm(test_prompt)
+        logger.info(f"Tamaño detectado: {result}")
+        return result
         
-        # Modelos pequeños suelen dar respuestas más cortas y simples
-        if len(response) < 100:
-            return "small"
-        elif len(response) > 300:
-            return "large"
-        else:
-            return "standard"
-            
-    except:
-        # Si todo falla, asumir un modelo estándar
+    except Exception as e:
+        logger.warning(f"Error en detección de modelo: {e}, usando fallback")
         return "standard"
 
 def recover_from_model_collapse(llm, chapter_details, context_manager, section_position):
@@ -568,121 +475,18 @@ def recover_from_model_collapse(llm, chapter_details, context_manager, section_p
         # En caso de error, devolver un texto simple
         return f"En las profundidades del espacio, la nave seguía su curso hacia nuevos destinos. La tripulación se preparaba para afrontar los desafíos que les aguardaban en {chapter_title}."
 
-def get_llm_model(callbacks=None):
-    """
-    Selecciona el modelo LLM a utilizar basado en la configuración disponible y
-    el tipo de modelo establecido en SELECTED_MODEL
-    """
-    if callbacks is None:
-        callbacks = [ColoredStreamingCallbackHandler()]
-    
-    # Leer modelo desde SELECTED_MODEL env, si no está definido, usar prioridades por proveedor
-    selected = os.environ.get("SELECTED_MODEL", "").strip()
-    if selected:
-        provider, model_name = parse_model_string(selected)
-    else:
-        # Leer el tipo de modelo preferido desde MODEL_TYPE
-        model_type = os.environ.get("MODEL_TYPE", "").strip().lower()
-        
-        # Si se ha especificado explícitamente un tipo de modelo en .env
-        if model_type:
-            if model_type == "groq" and os.environ.get("GROQ_MODEL", "").strip():
-                provider = "groq"
-                model_name = os.environ["GROQ_MODEL"]
-            elif model_type == "openai" and os.environ.get("OPENAI_MODEL", "").strip():
-                provider = "openai"
-                model_name = os.environ["OPENAI_MODEL"]
-            elif model_type == "deepseek" and os.environ.get("DEEPSEEK_MODEL", "").strip():
-                provider = "deepseek"
-                model_name = os.environ["DEEPSEEK_MODEL"]
-            elif model_type == "anthropic" and os.environ.get("ANTHROPIC_MODEL", "").strip():
-                provider = "anthropic"
-                model_name = os.environ["ANTHROPIC_MODEL"]
-            elif model_type == "ollama" and os.environ.get("OLLAMA_MODEL", "").strip():
-                provider = "ollama"
-                model_name = os.environ["OLLAMA_MODEL"]
-            # Para otros proveedores personalizados
-            elif os.environ.get(f"{model_type.upper()}_MODEL", "").strip():
-                provider = model_type
-                model_name = os.environ[f"{model_type.upper()}_MODEL"]
-            else:
-                # Si el tipo de modelo está vacío o no tiene configuración, usar fallback
-                provider, model_name = fallback_to_available_provider()
-        else:
-            # Si no hay MODEL_TYPE, usar fallback a los proveedores disponibles
-            provider, model_name = fallback_to_available_provider()
-    
-    # Parámetros comunes
-    common_params = {
-        "callbacks": callbacks,
-        "temperature": 0.7,
-        "streaming": True,
-    }
-    
-    # Caso especial para proveedores adicionales como Groq
-    if provider == "groq":
-        try:
-            groq_api_key = os.environ.get("GROQ_API_KEY", "")
-            groq_api_base = os.environ.get("GROQ_API_BASE", "https://api.groq.com/openai/v1")
-            
-            if not groq_api_key:
-                print_progress("API key de Groq no encontrada. Cambiando a otro modelo disponible.")
-                provider, model_name = fallback_to_available_provider(exclude=["groq"])
-                return get_provider_model(provider, model_name, common_params)
-                
-            print_progress(f"Utilizando modelo Groq: {model_name}")
-            return ChatOpenAI(
-                model=model_name,
-                api_key=groq_api_key,
-                base_url=groq_api_base,
-                **common_params
-            )
-        except Exception as e:
-            print_progress(f"Error al inicializar Groq: {str(e)}")
-            print_progress("Cambiando a otro modelo disponible.")
-            provider, model_name = fallback_to_available_provider(exclude=["groq"])
-            return get_provider_model(provider, model_name, common_params)
-    
-    # Caso especial para Ollama que usa ChatOllama
-    if provider == "ollama":
-        # Obtener la configuración de Ollama
-        ollama_api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
-        
-        if not check_ollama_available():
-            print_progress(f"Ollama no está disponible en {ollama_api_base}. Cambiando a otro modelo disponible.")
-            provider, model_name = fallback_to_available_provider(exclude=["ollama"])
-            return get_provider_model(provider, model_name, common_params)
-        else:
-            try:
-                print_progress(f"Utilizando modelo Ollama: {model_name}")
-                return ChatOllama(
-                    model=model_name,
-                    base_url=ollama_api_base,
-                    **common_params,
-                    top_k=50,
-                    top_p=0.9,
-                    repeat_penalty=1.1
-                )
-            except Exception as e:
-                print_progress(f"Error al inicializar Ollama: {str(e)}")
-                print_progress("Cambiando a otro modelo disponible.")
-                provider, model_name = fallback_to_available_provider(exclude=["ollama"])
-                return get_provider_model(provider, model_name, common_params)
-    
-    # Usar función helper para el resto de proveedores
-    return get_provider_model(provider, model_name, common_params)
-
 class BaseChain:
     PROMPT_TEMPLATE = ""
-    MAX_RETRIES = 3
     TIMEOUT = 60
 
     def __init__(self) -> None:
         # Obtener el tipo de modelo actual directamente desde la variable de entorno
-        # en lugar de usar la variable global SELECTED_MODEL
         current_model_type = os.environ.get("SELECTED_MODEL", "ollama")
         
         self.llm = get_llm_model()
+        
+        # Inicializar estrategia de reintentos
+        self.retry_strategy = RetryStrategy()
         
         # Crear el prompt template desde la cadena de texto
         self.prompt = PromptTemplate(
@@ -705,38 +509,36 @@ class BaseChain:
         ]
 
     def invoke(self, **kwargs):
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                # Verificar que todos los parámetros necesarios estén presentes
-                required_vars = set(self.prompt.input_variables)
-                missing_keys = required_vars - set(kwargs.keys())
-                if missing_keys:
-                    raise ValueError(f"Faltan parámetros requeridos: {missing_keys}")
+        """
+        Invoca la cadena LLM con reintentos automáticos usando RetryStrategy.
+        Reemplaza la lógica de reintentos manual anterior.
+        """
+        def _execute_chain():
+            # Verificar que todos los parámetros necesarios estén presentes
+            required_vars = set(self.prompt.input_variables)
+            missing_keys = required_vars - set(kwargs.keys())
+            if missing_keys:
+                raise ValueError(f"Faltan parámetros requeridos: {missing_keys}")
 
-                start_time = time.time()
-                result = self.chain(kwargs)
-                
-                if result:
-                    # Usar la función para extraer contenido independientemente del formato
-                    if "text" in result:
-                        text_content = extract_content_from_llm_response(result["text"])
-                        if text_content and text_content.strip():
-                            return clean_think_tags(text_content.strip())
-                    else:
-                        # Manejar caso donde result no tiene una clave "text"
-                        text_content = extract_content_from_llm_response(result)
-                        if text_content and text_content.strip():
-                            return clean_think_tags(text_content.strip())
-                
-                raise ValueError("La respuesta del modelo está vacía")
-                
-            except Exception as e:
-                print_progress(f"Error en intento {attempt + 1}: {str(e)}")
-                if attempt == self.MAX_RETRIES - 1:
-                    raise
-                wait_time = (attempt + 1) * 2
-                print_progress(f"Reintentando en {wait_time} segundos...")
-                time.sleep(wait_time)
+            start_time = time.time()
+            result = self.chain(kwargs)
+            
+            if result:
+                # Usar la función para extraer contenido independientemente del formato
+                if "text" in result:
+                    text_content = extract_content_from_llm_response(result["text"])
+                    if text_content and text_content.strip():
+                        return clean_think_tags(text_content.strip())
+                else:
+                    # Manejar caso donde result no tiene una clave "text"
+                    text_content = extract_content_from_llm_response(result)
+                    if text_content and text_content.strip():
+                        return clean_think_tags(text_content.strip())
+            
+            raise ValueError("La respuesta del modelo está vacía")
+        
+        # Usar RetryStrategy para ejecutar con reintentos automáticos
+        return self.retry_strategy.execute(_execute_chain)
 
     def process_input(self, text):
         """Limpia las cadenas de pensamiento de los inputs antes de usarlos en prompts"""

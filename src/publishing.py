@@ -35,70 +35,14 @@ class DocWriter:
         return chapter_title
     
     def clean_content(self, text):
-        """Limpia el texto de posibles etiquetas, marcadores o contenido que no sea narrativo"""
-        # Eliminar cualquier etiqueta, resumen o nota de desarrollo
-        patterns_to_remove = [
-            r'<think>.*?</think>',                       # Etiquetas de pensamiento
-            r'<.*?>',                                    # Cualquier etiqueta XML/HTML
-            r'\[Nota:.*?\]',                             # Notas
-            r'\[Desarrollo:.*?\]',                       # Notas de desarrollo
-            r'\[Contexto:.*?\]',                         # Notas de contexto
-            r'\[Idea:.*?\]',                             # Notas de ideas
-            r'\[Continuación:.*?\]',                     # Notas de continuación
-            r'\[Marco:.*?\]',                            # Notas de marco
-            r'\[Resumen:.*?\]',                          # Resúmenes
-            r'Resumen:.*?\n',                            # Líneas de resumen
-            r'RESUMEN.*?\n',                             # Títulos de resumen
-            r'\n-{3,}\n.*?\n-{3,}\n',                    # Bloques delimitados por guiones
-            r'Capítulo \d+:.*?(?=\n\n)',                 # Títulos de capítulo con formato incorrecto
-            r'CAPÍTULO \d+:.*?(?=\n\n)',                 # Títulos de capítulo con formato incorrecto
-            r'INICIO DEL CAPÍTULO:',                     # Marcadores de inicio de capítulo
-            r'\[\.\.\.PARTE MEDIA DEL CAPÍTULO\.\.\.\]', # Marcadores de parte media
-            r'\[\.\.\.FINAL DEL CAPÍTULO\.\.\.\]',       # Marcadores de final de capítulo
-            r'\[\.\.\.\]',                               # Indicadores de contenido omitido
-            r'Progreso actual:.*?\n',                    # Indicadores de progreso
-            r'Elementos clave:.*?\n',                    # Elementos clave que no son parte de la narrativa
-            r'### .*? ###',                              # Encabezados de sección con formato markdown
-            r'\*\*\*.*?\*\*\*',                          # Texto entre asteriscos (no dialógico)
-            r'--\s?Fin del capítulo\s?--',               # Marcadores de fin de capítulo
-            r'--\s?Continuará\s?--'                      # Marcadores de continuación
-        ]
+        """
+        Limpia el texto de posibles etiquetas, marcadores o contenido que no sea narrativo.
         
-        for pattern in patterns_to_remove:
-            text = re.sub(pattern, '', text, flags=re.DOTALL | re.IGNORECASE)
-        
-        # Eliminar líneas que comienzan con indicadores no narrativos
-        non_narrative_starts = [
-            "Nota:",
-            "Resumen:",
-            "Contexto:",
-            "RESUMEN",
-            "CONTEXTO",
-            "IMPORTANTE:",
-            "IDEA:",
-            "PROGRESO:",
-            "CAPÍTULO ANTERIOR:",
-            "MARCO NARRATIVO:"
-        ]
-        
-        lines = text.split('\n')
-        filtered_lines = []
-        for line in lines:
-            if not any(line.strip().startswith(indicator) for indicator in non_narrative_starts):
-                filtered_lines.append(line)
-        
-        text = '\n'.join(filtered_lines)
-            
-        # Eliminar múltiples saltos de línea (más de 2)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        
-        # Eliminar múltiples espacios
-        text = re.sub(r' {2,}', ' ', text)
-        
-        # Eliminar líneas que solo contienen números o símbolos
-        text = re.sub(r'^\s*[\d\W]+\s*$', '', text, flags=re.MULTILINE)
-        
-        return text.strip()
+        NOTA: Esta función ahora usa el sistema unificado de limpieza de texto.
+        Mantenida por compatibilidad con código existente.
+        """
+        from text_cleaning import clean_content as _clean_content
+        return _clean_content(text, aggressive=True)
 
     def write_doc(self, book, chapter_dict, title, output_format='pdf', output_path='./docs'):
         try:

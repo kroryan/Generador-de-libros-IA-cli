@@ -1,5 +1,11 @@
 from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response
 
+# Importar el sistema unificado de contexto
+from unified_context import UnifiedContextManager, ContextMode
+
+# Alias para compatibilidad con código existente
+ProgressiveContextManager = UnifiedContextManager
+
 class ChapterSummaryChain(BaseEventChain):
     """Genera resúmenes de capítulos para mantener la coherencia narrativa entre ellos."""
     
@@ -162,84 +168,10 @@ class ChapterSummaryChain(BaseEventChain):
             if len(result) > 300:
                 print_progress("Resumen final demasiado largo, truncando...")
                 result = result[:300] + "..."
-                
+            
             print_progress(f"Resumen final del capítulo {chapter_num} completado")
             return result
             
         except Exception as e:
             print_progress(f"Error generando resumen para el capítulo {chapter_num}: {str(e)}")
             return f"Capítulo {chapter_num}: Continúa la historia."
-
-class ProgressiveContextManager:
-    """
-    Sistema simplificado para gestionar el contexto de manera progresiva
-    durante la generación del libro.
-    Versión modificada para permitir generación continua sin restricciones.
-    """
-    def __init__(self, framework=""):
-        self.framework = framework
-        self.book_context = {}
-        self.chapter_contexts = {}
-        self.global_entities = {}
-        self.current_sections = {}
-        
-    def register_chapter(self, chapter_key, title, summary):
-        """Registra información básica de un capítulo"""
-        self.chapter_contexts[chapter_key] = {
-            "title": title,
-            "summary": summary,
-            "content": [],
-            "entities": {}
-        }
-    
-    def update_chapter_content(self, chapter_key, section_content):
-        """Actualiza el contenido de un capítulo con una nueva sección"""
-        if chapter_key not in self.chapter_contexts:
-            self.register_chapter(chapter_key, f"Capítulo {chapter_key}", "")
-            
-        if "content" not in self.chapter_contexts[chapter_key]:
-            self.chapter_contexts[chapter_key]["content"] = []
-            
-        self.chapter_contexts[chapter_key]["content"].append(section_content)
-    
-    def get_context_for_section(self, chapter_number, position, chapter_key):
-        """
-        Obtiene contexto para una sección específica de un capítulo.
-        Versión simplificada que solo devuelve información básica.
-        """
-        # Si no hay información de capítulo, devolver contexto vacío
-        if chapter_key not in self.chapter_contexts:
-            return {
-                "framework": self.framework,
-                "previous_chapters_summary": "",
-                "current_chapter_summary": "",
-                "key_entities": {}
-            }
-            
-        # Resumen de capítulos anteriores
-        previous_chapters = []
-        for i in range(1, chapter_number):
-            for key, ctx in self.chapter_contexts.items():
-                # Buscar capítulos con número menor al actual
-                if str(i) in key:
-                    title = ctx.get("title", f"Capítulo {key}")
-                    summary = ctx.get("summary", "")
-                    if summary:
-                        previous_chapters.append(f"{title}: {summary}")
-        
-        # Contenido acumulado del capítulo actual 
-        current_content = self.chapter_contexts[chapter_key].get("content", [])
-        current_summary = ""
-        
-        if current_content:
-            # Usar el contenido acumulado como contexto
-            paragraphs = current_content[-3:] if len(current_content) > 3 else current_content
-            current_summary = "\n\n".join(paragraphs)
-            
-        # Devolver contexto simpificado
-        return {
-            "framework": self.framework,
-            "previous_chapters_summary": " ".join(previous_chapters),
-            "current_chapter_summary": current_summary,
-            "key_entities": {}
-        }

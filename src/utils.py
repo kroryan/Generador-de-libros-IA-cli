@@ -229,30 +229,14 @@ def print_progress(message):
     sys.stdout.flush()
 
 def clean_think_tags(text):
-    """Elimina las cadenas de pensamiento del modelo en varios formatos posibles"""
-    if not text:
-        return text
-        
-    # Lista de patrones a limpiar
-    patterns = [
-        r'<think>.*?</think>\s*',  # Formato <think>...</think>
-        r'\[pensamiento:.*?\]\s*',  # Formato [pensamiento:...]
-        r'\[think:.*?\]\s*',       # Formato [think:...]
-        r'\(pensando:.*?\)\s*',    # Formato (pensando:...)
-        r'\(thinking:.*?\)\s*',    # Formato (thinking:...)
-        r'<razonamiento>.*?</razonamiento>\s*',  # Formato <razonamiento>...</razonamiento>
-        r'<reasoning>.*?</reasoning>\s*',  # Formato <reasoning>...</reasoning>
-    ]
+    """
+    Elimina las cadenas de pensamiento del modelo en varios formatos posibles.
     
-    cleaned = text
-    for pattern in patterns:
-        cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
-    
-    # Eliminar líneas vacías extras que puedan quedar
-    cleaned = re.sub(r'\n\s*\n', '\n\n', cleaned)
-    # Eliminar espacios extras al inicio y final
-    cleaned = cleaned.strip()
-    return cleaned
+    NOTA: Esta función ahora usa el sistema unificado de limpieza de texto.
+    Mantenida por compatibilidad con código existente.
+    """
+    from text_cleaning import clean_think_tags as _clean_think_tags
+    return _clean_think_tags(text)
 
 def get_llm_model(callbacks=None):
     """

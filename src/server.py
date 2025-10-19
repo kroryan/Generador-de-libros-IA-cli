@@ -36,98 +36,44 @@ socketio = SocketIO(
 
 # Función para limpiar códigos de escape ANSI
 def clean_ansi_codes(text):
-    # Patrón para capturar códigos de escape ANSI
-    ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
-    # También limpiar patrones como [97m, [0m, [1m, etc.
-    ansi_simple = re.compile(r'\[\d+m')
+    """
+    Limpia códigos de escape ANSI del texto.
     
-    # Primero eliminamos códigos de escape complejos
-    text = ansi_escape.sub('', text)
-    # Luego los códigos simples
-    text = ansi_simple.sub('', text)
-    return text
+    NOTA: Esta función ahora usa el sistema unificado de limpieza de texto.
+    Mantenida por compatibilidad con código existente.
+    """
+    from text_cleaning import clean_ansi_codes as _clean_ansi_codes
+    return _clean_ansi_codes(text)
 
 # Clase para capturar la salida y enviarla a través de websockets
 class OutputCapture:
+    """
+    Captura output y lo envía vía websockets.
+    
+    NOTA: Ahora usa el sistema unificado de limpieza de streaming.
+    """
     def __init__(self):
-        self.in_think_block = False
-        self.buffer = ""
-        self.think_buffer = ""
-        self.result_buffer = ""
+        from streaming_cleaner import OutputCapture as _OutputCapture
+        self._capture = _OutputCapture(socketio_emit_func=socketio.emit)
         
     def write(self, data):
-        # Limpiar códigos de escape ANSI y otros prefijos
-        data = clean_ansi_codes(data)
-        
-        # Detectar inicio y fin de bloques de pensamiento
-        if "<think>" in data:
-            # Enviar cualquier texto pendiente antes de entrar en modo pensamiento
-            if self.buffer.strip():
-                socketio.emit('result_update', {'data': self.buffer.strip()})
-                self.buffer = ""
-            
-            self.in_think_block = True
-            # Eliminar la etiqueta <think> del mensaje
-            data = data.replace("<think>", "")
-            self.think_buffer = data.strip()
-            
-            # Si hay contenido después de quitar <think>, emitirlo inmediatamente
-            if self.think_buffer:
-                socketio.emit('thinking_update', {'data': self.think_buffer, 'type': 'start'})
-                self.think_buffer = ""
-            return
-        elif "</think>" in data:
-            self.in_think_block = False
-            # Eliminar la etiqueta </think> del mensaje
-            data = data.replace("</think>", "")
-            # Agregar cualquier texto final al buffer de pensamiento
-            self.think_buffer += data.strip()
-            
-            # Enviar el bloque completo de pensamiento si hay algo
-            if self.think_buffer.strip():
-                socketio.emit('thinking_update', {
-                    'data': self.think_buffer.strip(), 
-                    'type': 'end'
-                })
-            
-            self.think_buffer = ""
-            return
-            
-        # Acumular datos según el modo actual
-        if self.in_think_block:
-            self.think_buffer += data
-            
-            # Solo enviar cuando hay suficiente texto acumulado o hay un salto de línea
-            if len(self.think_buffer) > 50 or '\n' in data:
-                if self.think_buffer.strip():
-                    socketio.emit('thinking_update', {
-                        'data': self.think_buffer.strip(), 
-                        'type': 'content'
-                    })
-                self.think_buffer = ""
-        else:
-            self.buffer += data
-            
-            # Solo enviar cuando hay suficiente texto acumulado o hay un salto de línea
-            if len(self.buffer) > 50 or '\n' in data:
-                if self.buffer.strip():
-                    socketio.emit('result_update', {'data': self.buffer.strip()})
-                self.buffer = ""
+        self._capture.write(data)
     
     def flush(self):
-        # Enviar cualquier texto pendiente en los buffers
-        if self.think_buffer and self.in_think_block:
-            if self.think_buffer.strip():
-                socketio.emit('thinking_update', {
-                    'data': self.think_buffer.strip(),
-                    'type': 'content'
-                })
-            self.think_buffer = ""
-        
-        if self.buffer:
-            if self.buffer.strip():
-                socketio.emit('result_update', {'data': self.buffer.strip()})
-            self.buffer = ""
+        self._capture.flush()
+    
+    # Propiedades para compatibilidad
+    @property
+    def in_think_block(self):
+        return self._capture.in_think_block
+    
+    @property
+    def buffer(self):
+        return self._capture.buffer
+    
+    @property
+    def think_buffer(self):
+        return self._capture.think_buffer
 
 # Función para obtener los modelos disponibles en todas las APIs configuradas
 def get_available_models():

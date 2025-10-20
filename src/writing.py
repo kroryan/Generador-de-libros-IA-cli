@@ -1,6 +1,8 @@
 from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, BaseChain
 from chapter_summary import ChapterSummaryChain, ProgressiveContextManager
 from emergency_prompts import emergency_prompts
+from example_library import ExampleLibrary
+from section_quality_monitor import SectionQualityMonitor
 from time import sleep
 import re
 import time  # Importación añadida para usar time.sleep()
@@ -15,7 +17,8 @@ _context_config = _config.context
 _rate_limit_config = _config.rate_limit
 
 class WriterChain(BaseEventChain):
-    PROMPT_TEMPLATE = """
+    # Template zero-shot original
+    ZERO_SHOT_TEMPLATE = """
     Eres un escritor profesional de {genre} en español.
     
     ### INFORMACIÓN ESENCIAL:
@@ -49,6 +52,68 @@ class WriterChain(BaseEventChain):
     
     Escribe directamente el contenido narrativo:"""
 
+    # Nuevo template few-shot con ejemplos
+    FEW_SHOT_TEMPLATE = """
+    Eres un escritor profesional de {genre} en español.
+    
+    ### INFORMACIÓN ESENCIAL:
+    - Título: "{title}"
+    - Estilo: {style}
+    - Capítulo actual: {chapter_title} (Capítulo {current_chapter} de {total_chapters})
+    - Posición: {section_position} del capítulo
+    
+    ### EJEMPLOS DE REFERENCIA:
+    
+    A continuación se muestran ejemplos de secciones bien escritas en este género/estilo:
+    
+    {examples}
+    
+    ### CONTEXTO RESUMIDO:
+    {summary}
+    
+    ### PÁRRAFOS RECIENTES:
+    {previous_paragraphs}
+    
+    ### IDEA A DESARROLLAR AHORA:
+    {current_idea}
+    
+    <think>
+    Analizaré los ejemplos para capturar:
+    1. Tono y ritmo narrativo característico del género
+    2. Nivel de detalle descriptivo apropiado
+    3. Balance entre acción, diálogo y descripción
+    4. Técnicas de transición entre escenas
+    
+    Luego desarrollaré la idea actual manteniendo:
+    - Conexión directa con el contenido reciente
+    - Desarrollo coherente de personajes y situaciones
+    - Avance natural de la historia
+    - Calidad similar a los ejemplos mostrados
+    </think>
+    
+    IMPORTANTE: 
+    - Escribe EXCLUSIVAMENTE texto narrativo en español
+    - Mantén el nivel de calidad de los ejemplos mostrados
+    - NO incluyas notas, comentarios ni explicaciones
+    - Solo genera el texto que formaría parte del libro final
+    
+    Escribe directamente el contenido narrativo:"""
+    
+    def __init__(self, use_few_shot: bool = True):
+        """
+        Args:
+            use_few_shot: Si True, usa prompts con ejemplos. Si False, usa zero-shot.
+        """
+        super().__init__()
+        
+        # NUEVO: Configurar few-shot learning
+        self.use_few_shot = use_few_shot
+        if self.use_few_shot:
+            self.example_library = ExampleLibrary()
+            self.PROMPT_TEMPLATE = self.FEW_SHOT_TEMPLATE
+        else:
+            self.PROMPT_TEMPLATE = self.ZERO_SHOT_TEMPLATE
+
     def run(
         self,
         genre,
@@ -79,20 +144,36 @@ class WriterChain(BaseEventChain):
             if len(previous_paragraphs_clean) > _context_config.limited_context_size:
                 previous_paragraphs_clean = previous_paragraphs_clean[-_context_config.limited_context_size:] 
             
-            result = self.invoke(
-                genre=clean_think_tags(genre),
-                style=clean_think_tags(style),
-                title=clean_think_tags(title),
-                chapter_title=clean_think_tags(chapter_title),
-                summary=summary_clean,
-                previous_paragraphs=previous_paragraphs_clean,
-                current_idea=current_idea_clean,
-                current_chapter=current_chapter,
-                total_chapters=total_chapters,
-                section_position=section_position,
-                section_number=section_number,
-                total_sections=total_sections
-            )
+            # NUEVO: Obtener ejemplos relevantes si few-shot está activado
+            examples_text = ""
+            if self.use_few_shot:
+                examples_text = self._get_formatted_examples(
+                    genre=genre,
+                    style=style,
+                    section_position=section_position
+                )
+            
+            # Invocar con o sin ejemplos según configuración
+            invoke_params = {
+                'genre': clean_think_tags(genre),
+                'style': clean_think_tags(style),
+                'title': clean_think_tags(title),
+                'chapter_title': clean_think_tags(chapter_title),
+                'summary': summary_clean,
+                'previous_paragraphs': previous_paragraphs_clean,
+                'current_idea': current_idea_clean,
+                'current_chapter': current_chapter,
+                'total_chapters': total_chapters,
+                'section_position': section_position,
+                'section_number': section_number,
+                'total_sections': total_sections
+            }
+            
+            # Solo añadir ejemplos si estamos usando few-shot
+            if self.use_few_shot:
+                invoke_params['examples'] = examples_text
+            
+            result = self.invoke(**invoke_params)
             
             # El resultado ya viene limpio por el invoke() de BaseChain
             print_progress(f"Sección completada: {len(result)} caracteres")
@@ -101,6 +182,70 @@ class WriterChain(BaseEventChain):
         except Exception as e:
             print_progress(f"Error generando contenido: {str(e)}")
             raise
+    
+    def _get_formatted_examples(
+        self, 
+        genre: str, 
+        style: str, 
+        section_position: str
+    ) -> str:
+        """
+        Recupera y formatea ejemplos relevantes para el prompt.
+        
+        Args:
+            genre: Género del libro
+            style: Estilo de escritura
+            section_position: inicio/medio/final
+            
+        Returns:
+            String formateado con 1-2 ejemplos
+        """
+        try:
+            # Obtener número máximo de ejemplos desde configuración
+            max_examples = _config.few_shot.max_examples_per_prompt
+            
+            # Obtener ejemplos de la biblioteca
+            examples = self.example_library.get_examples(
+                genre=genre,
+                style=style,
+                section_type=section_position,
+                max_examples=max_examples
+            )
+            
+            if not examples:
+                # Fallback: buscar sin filtro de tipo
+                examples = self.example_library.get_examples(
+                    genre=genre,
+                    style=style,
+                    max_examples=max_examples
+                )
+            
+            if not examples:
+                return "[No hay ejemplos disponibles para este género/estilo]"
+            
+            # Formatear ejemplos para el prompt
+            formatted = []
+            for i, ex in enumerate(examples, 1):
+                formatted.append(f"""
+**EJEMPLO {i}:**
+
+Contexto previo:
+{ex.context}
+
+Idea desarrollada:
+{ex.idea}
+
+Texto generado:
+{ex.content}
+
+---
+""")
+            
+            return "\n".join(formatted)
+            
+        except Exception as e:
+            print_progress(f"⚠️ Error obteniendo ejemplos: {str(e)}")
+            return "[Error cargando ejemplos]"
 
 def regenerate_problematic_section(writer_chain, context_manager, section_params, max_attempts=3):
     """
@@ -216,7 +361,19 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
 
 def write_book(genre, style, profile, title, framework, summaries_dict, idea_dict, chapter_summaries=None):
     print_progress("Iniciando escritura del libro...")
-    writer_chain = WriterChain()
+    
+    # NUEVO: Usar configuración centralizada para few-shot learning
+    config = _config
+    few_shot_config = config.few_shot
+    
+    # Inicializar monitor de calidad con configuración
+    quality_monitor = SectionQualityMonitor(
+        quality_threshold=few_shot_config.quality_threshold,
+        auto_save=few_shot_config.auto_save_examples
+    )
+    
+    # Inicializar WriterChain con configuración few-shot
+    writer_chain = WriterChain(use_few_shot=few_shot_config.enabled)
     book = {}
     
     # Si no hay resúmenes de capítulos, crear un diccionario vacío
@@ -382,6 +539,20 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     print_progress("⚠️ Usando texto de respaldo tras múltiples fallos")
                     section_content = f"La historia continuó desarrollándose en {chapter}. Los personajes avanzaron en su objetivo mientras enfrentaban nuevos desafíos."
                 
+                # NUEVO: Evaluar y potencialmente guardar como ejemplo
+                quality_score = quality_monitor.evaluate_and_store(
+                    section_content=section_content,
+                    genre=genre,
+                    style=style,
+                    section_position=section_position,
+                    context=paragraphs_context[-200:] if paragraphs_context else "",
+                    idea=idea,
+                    book_title=title
+                )
+                
+                if quality_score:
+                    print_progress(f"📊 Calidad de sección: {quality_score:.2f}")
+                
                 # Actualizar contexto en el gestor y guardar el contenido
                 context_manager.update_chapter_content(chapter, section_content)
                 
@@ -448,6 +619,18 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             
             print_progress(f"✓ Capítulo {chapter} completado: {len(chapter_content)} secciones")
 
+        # Al final de la generación, mostrar estadísticas de calidad
+        stats = quality_monitor.get_session_stats()
+        print_progress("\n" + "="*50)
+        print_progress("📈 ESTADÍSTICAS DE FEW-SHOT LEARNING:")
+        print_progress(f"  Secciones evaluadas: {stats['sections_evaluated']}")
+        print_progress(f"  Secciones guardadas como ejemplos: {stats['sections_saved']}")
+        print_progress(f"  Calidad promedio: {stats['average_quality']:.2f}")
+        print_progress(f"  Calidad máxima: {stats['max_quality']:.2f}")
+        print_progress(f"  Calidad mínima: {stats['min_quality']:.2f}")
+        print_progress(f"  Tasa de guardado: {stats['save_rate']:.1%}")
+        print_progress("="*50 + "\n")
+        
         print_progress("======================================")
         print_progress("ESCRITURA DEL LIBRO FINALIZADA")
         print_progress("======================================")

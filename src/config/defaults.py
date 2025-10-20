@@ -238,6 +238,37 @@ class LLMConfig:
 
 
 @dataclass
+class FewShotConfig:
+    """
+    Configuración de few-shot learning para prompts.
+    
+    Controla el sistema de ejemplos y evaluación de calidad.
+    """
+    enabled: bool = True
+    quality_threshold: float = 0.75
+    max_examples_per_prompt: int = 2
+    examples_storage_path: str = "./data/examples"
+    auto_save_examples: bool = True
+    
+    @classmethod
+    def from_env(cls) -> 'FewShotConfig':
+        """Crea configuración desde variables de entorno."""
+        enabled_str = os.getenv('USE_FEW_SHOT_LEARNING', 'true').lower()
+        enabled = enabled_str in ['true', '1', 'yes', 'on']
+        
+        auto_save_str = os.getenv('FEW_SHOT_AUTO_SAVE', 'true').lower()
+        auto_save = auto_save_str in ['true', '1', 'yes', 'on']
+        
+        return cls(
+            enabled=enabled,
+            quality_threshold=float(os.getenv('EXAMPLE_QUALITY_THRESHOLD', '0.75')),
+            max_examples_per_prompt=int(os.getenv('MAX_EXAMPLES_PER_PROMPT', '2')),
+            examples_storage_path=os.getenv('EXAMPLES_STORAGE_PATH', './data/examples'),
+            auto_save_examples=auto_save
+        )
+
+
+@dataclass
 class GenerationConfig:
     """
     Configuración de parámetros de generación de libros.
@@ -295,6 +326,7 @@ class AppConfig:
     context: ContextConfig = field(default_factory=ContextConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
+    few_shot: FewShotConfig = field(default_factory=FewShotConfig)
     
     @classmethod
     def from_env(cls) -> 'AppConfig':
@@ -310,7 +342,8 @@ class AppConfig:
             rate_limit=RateLimitConfig.from_env(),
             context=ContextConfig.from_env(),
             llm=LLMConfig.from_env(),
-            generation=GenerationConfig.from_env()
+            generation=GenerationConfig.from_env(),
+            few_shot=FewShotConfig.from_env()
         )
     
     def validate(self) -> List[str]:
@@ -393,6 +426,16 @@ class AppConfig:
             errors.append(
                 f"GEN_DEFAULT_OUTPUT_FORMAT debe ser uno de: {', '.join(valid_formats)}"
             )
+        
+        # Validar FewShotConfig
+        if self.few_shot.quality_threshold < 0 or self.few_shot.quality_threshold > 1:
+            errors.append("EXAMPLE_QUALITY_THRESHOLD debe estar entre 0 y 1")
+        
+        if self.few_shot.max_examples_per_prompt < 1:
+            errors.append("MAX_EXAMPLES_PER_PROMPT debe ser >= 1")
+        
+        if not self.few_shot.examples_storage_path:
+            errors.append("EXAMPLES_STORAGE_PATH no puede estar vacío")
         
         return errors
     
@@ -526,5 +569,12 @@ def print_config(config: Optional[AppConfig] = None):
     print(f"  Default Genre: {config.generation.default_genre}")
     print(f"  Output Format: {config.generation.default_output_format}")
     print(f"  Output Directory: {config.generation.output_directory}")
+    
+    print("\n🎯 FEW-SHOT LEARNING CONFIGURATION")
+    print(f"  Enabled: {config.few_shot.enabled}")
+    print(f"  Quality Threshold: {config.few_shot.quality_threshold}")
+    print(f"  Max Examples per Prompt: {config.few_shot.max_examples_per_prompt}")
+    print(f"  Storage Path: {config.few_shot.examples_storage_path}")
+    print(f"  Auto Save Examples: {config.few_shot.auto_save_examples}")
     
     print("\n" + "="*60 + "\n")

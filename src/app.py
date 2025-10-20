@@ -37,7 +37,26 @@ def run_cli_generation(model=None):
             if profile:
                 print_step(f"Perfil detectado: {profile.display_name} ({profile.size_category})")
                 
-                # Configurar contexto basado en el perfil del modelo
+                # NUEVO: Crear calculador dinámico de contexto
+                from dynamic_context import DynamicContextCalculator
+                
+                context_calc = DynamicContextCalculator(model_name, provider)
+                context_profile = context_calc.profile
+                
+                # Actualizar variables de entorno dinámicamente
+                os.environ["CONTEXT_LIMITED_SIZE"] = str(context_profile.section_limit)
+                os.environ["CONTEXT_STANDARD_SIZE"] = str(context_profile.chapter_limit)
+                os.environ["CONTEXT_MAX_ACCUMULATION"] = str(context_profile.accumulation_threshold)
+                os.environ["CONTEXT_GLOBAL_LIMIT"] = str(context_profile.global_limit)
+                
+                print_step(f"🔧 Contexto dinámico configurado:")
+                print_step(f"   Ventana del modelo: {context_profile.context_window} tokens")
+                print_step(f"   Límite sección: {context_profile.section_limit} chars")
+                print_step(f"   Límite capítulo: {context_profile.chapter_limit} chars")
+                print_step(f"   Límite global: {context_profile.global_limit} chars")
+                print_step(f"   Umbral acumulación: {context_profile.accumulation_threshold} chars")
+                
+                # Configurar contexto basado en el perfil del modelo (compatibilidad)
                 context_window = profile.context_window
                 if context_window < 8192 or profile.size_category == "small":
                     print_step("Configurando modo de contexto limitado basado en perfil del modelo")
@@ -53,6 +72,25 @@ def run_cli_generation(model=None):
             else:
                 # Fallback para modelos no reconocidos
                 print_step("Modelo no reconocido en base de datos, usando detección por nombre")
+                
+                # NUEVO: Crear calculador dinámico incluso sin perfil detectado
+                from dynamic_context import DynamicContextCalculator
+                
+                context_calc = DynamicContextCalculator(model_name, provider)
+                context_profile = context_calc.profile
+                
+                # Actualizar variables de entorno dinámicamente
+                os.environ["CONTEXT_LIMITED_SIZE"] = str(context_profile.section_limit)
+                os.environ["CONTEXT_STANDARD_SIZE"] = str(context_profile.chapter_limit)
+                os.environ["CONTEXT_MAX_ACCUMULATION"] = str(context_profile.accumulation_threshold)
+                os.environ["CONTEXT_GLOBAL_LIMIT"] = str(context_profile.global_limit)
+                
+                print_step(f"🔧 Contexto dinámico estimado:")
+                print_step(f"   Ventana estimada: {context_profile.context_window} tokens")
+                print_step(f"   Límite sección: {context_profile.section_limit} chars")
+                print_step(f"   Límite capítulo: {context_profile.chapter_limit} chars")
+                
+                # Configuración de compatibilidad
                 if 'deepseek' in model_name.lower():
                     print_step("Detectado modelo Deepseek: configurando modo de contexto limitado")
                     os.environ["MODEL_CONTEXT_SIZE"] = "limited"

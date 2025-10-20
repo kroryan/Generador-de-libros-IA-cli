@@ -41,7 +41,8 @@ class UnifiedContextManager:
         mode: str = ContextMode.PROGRESSIVE,
         max_context_size: int = 2000,
         enable_micro_summaries: bool = False,
-        micro_summary_interval: int = 3
+        micro_summary_interval: int = 3,
+        model_profile: Optional[Any] = None
     ):
         """
         Inicializa el gestor de contexto unificado.
@@ -53,6 +54,7 @@ class UnifiedContextManager:
             max_context_size: Tamaño máximo del contexto en caracteres
             enable_micro_summaries: Si True, crea micro-resúmenes automáticos cada N secciones
             micro_summary_interval: Número de secciones entre micro-resúmenes
+            model_profile: Perfil del modelo para contexto dinámico (NUEVO)
         """
         self.framework = framework
         self.llm = llm
@@ -60,6 +62,27 @@ class UnifiedContextManager:
         self.max_context_size = max_context_size
         self.enable_micro_summaries = enable_micro_summaries
         self.micro_summary_interval = micro_summary_interval
+        self.base_profile = model_profile  # NUEVO: Perfil base del modelo
+        
+        # NUEVO: Analizadores dinámicos
+        try:
+            from narrative_complexity import NarrativeComplexityAnalyzer
+            from summary_quality import SummaryQualityEvaluator
+            
+            self.complexity_analyzer = NarrativeComplexityAnalyzer()
+            self.summary_evaluator = SummaryQualityEvaluator()
+            self.dynamic_context_enabled = True
+            
+            print_progress("🧠 Sistema de contexto dinámico inicializado")
+            
+        except ImportError as e:
+            print_progress(f"⚠️ Analizadores dinámicos no disponibles: {e}")
+            self.complexity_analyzer = None
+            self.summary_evaluator = None
+            self.dynamic_context_enabled = False
+        
+        # Límites dinámicos (se ajustan en tiempo real)
+        self.context_limits = self._calculate_initial_limits()
         
         # Estructuras de datos
         self.book_context = {}
@@ -89,6 +112,21 @@ class UnifiedContextManager:
         
         # Configurar desde variables de entorno si existen
         self._configure_from_env()
+    
+    def _calculate_initial_limits(self) -> Dict[str, int]:
+        """Límites iniciales basados en perfil del modelo o variables de entorno"""
+        # Obtener límites desde variables de entorno (configurados por DynamicContextCalculator)
+        section_limit = int(os.environ.get("CONTEXT_LIMITED_SIZE", "2000"))
+        chapter_limit = int(os.environ.get("CONTEXT_STANDARD_SIZE", "8000"))
+        global_limit = int(os.environ.get("CONTEXT_GLOBAL_LIMIT", "1000"))
+        accumulation_limit = int(os.environ.get("CONTEXT_MAX_ACCUMULATION", "6000"))
+        
+        return {
+            "max_section_context": section_limit,
+            "max_chapter_context": chapter_limit,
+            "max_global_context": global_limit,
+            "max_accumulation": accumulation_limit
+        }
     
     def _configure_from_env(self):
         """Configura el gestor desde variables de entorno."""
@@ -139,6 +177,35 @@ class UnifiedContextManager:
         
         if "content" not in self.chapter_contexts[chapter_key]:
             self.chapter_contexts[chapter_key]["content"] = []
+        
+        # NUEVO: Analizar complejidad narrativa
+        if self.dynamic_context_enabled and self.complexity_analyzer:
+            section_number = self.chapter_contexts[chapter_key]["section_count"] + 1
+            complexity = self.complexity_analyzer.analyze_section(section_content, section_number)
+            
+            # AJUSTE DINÁMICO: multiplicar límites por complejidad
+            multiplier = self.complexity_analyzer.get_context_multiplier()
+            
+            # Obtener factor de calidad de resúmenes
+            quality_factor = 1.0
+            if self.summary_evaluator:
+                quality_factor = self.summary_evaluator.get_aggressiveness_factor()
+            
+            # Recalcular límites dinámicos
+            if hasattr(self, 'base_profile') and self.base_profile:
+                try:
+                    from dynamic_context import DynamicContextCalculator
+                    # Usar calculador dinámico para actualizar límites
+                    if hasattr(self, '_context_calculator'):
+                        new_limits = self._context_calculator.calculate_dynamic_limits(
+                            multiplier, quality_factor
+                        )
+                        self.context_limits.update(new_limits)
+                except ImportError:
+                    pass
+            
+            print_progress(f"📊 Sección {section_number}: {complexity['character_count']} personajes, "
+                          f"complejidad={multiplier:.1f}x, calidad={quality_factor:.1f}x")
         
         # Agregar contenido
         self.chapter_contexts[chapter_key]["content"].append(section_content)
@@ -215,7 +282,7 @@ class UnifiedContextManager:
     def _create_micro_summary(self, chapter_key: str):
         """
         Crea un micro-resumen de las últimas secciones para optimizar memoria.
-        Característica de IntelligentContextManager.
+        Característica de IntelligentContextManager con evaluación de calidad.
         """
         if not self.llm or len(self.current_chapter_content) < self.micro_summary_interval:
             return
@@ -226,15 +293,22 @@ class UnifiedContextManager:
         recent_sections = self.current_chapter_content[-self.micro_summary_interval:]
         combined_text = "\n\n".join(recent_sections)
         
+        # NUEVO: Ajustar límite de palabras según calidad histórica
+        aggressiveness = 1.0
+        if self.dynamic_context_enabled and self.summary_evaluator:
+            aggressiveness = self.summary_evaluator.get_aggressiveness_factor()
+        
+        max_words = int(100 * aggressiveness)  # 60-140 palabras según calidad
+        
         # Crear prompt para micro-resumen
         prompt = f"""
         Resume las siguientes secciones del capítulo actual manteniendo SOLO los elementos narrativos esenciales.
-        Máximo 100 palabras, enfócate en:
+        Máximo {max_words} palabras, enfócate en:
         - Eventos clave que afectan la trama
         - Desarrollo de personajes importantes
         - Información que será relevante para continuar la historia
         
-        IMPORTANTE: Responde SOLO en español, máximo 100 palabras.
+        IMPORTANTE: Responde SOLO en español, máximo {max_words} palabras.
         
         Secciones a resumir:
         {combined_text[:1500]}
@@ -246,6 +320,18 @@ class UnifiedContextManager:
             response = self.llm.invoke(prompt)
             micro_summary = clean_think_tags(extract_content_from_llm_response(response))
             
+            # NUEVO: Evaluar calidad del resumen
+            if self.dynamic_context_enabled and self.summary_evaluator:
+                quality = self.summary_evaluator.evaluate_summary(
+                    combined_text, 
+                    micro_summary
+                )
+                
+                print_progress(f"✓ Micro-resumen creado (calidad={quality:.2f}, "
+                              f"agresividad={aggressiveness:.1f}x)")
+            else:
+                print_progress("✓ Micro-resumen creado")
+            
             # Reemplazar las secciones resumidas con el micro-resumen
             if len(micro_summary) > 20:
                 # Mantener solo la última sección completa + el micro-resumen
@@ -253,7 +339,7 @@ class UnifiedContextManager:
                     f"[Resumen de secciones anteriores: {micro_summary}]",
                     self.current_chapter_content[-1]  # Última sección completa
                 ]
-                print_progress("✓ Micro-resumen creado, contexto optimizado")
+                print_progress("✓ Contexto optimizado")
         
         except Exception as e:
             print_progress(f"⚠️ Error en micro-resumen: {str(e)}, continuando...")
@@ -635,6 +721,52 @@ class UnifiedContextManager:
         context["global"] = self.book_memory
         
         return context
+    
+    # ===== NUEVOS MÉTODOS PARA ANÁLISIS DINÁMICO =====
+    
+    def get_complexity_report(self) -> Dict[str, any]:
+        """Obtiene reporte de complejidad narrativa"""
+        if self.dynamic_context_enabled and self.complexity_analyzer:
+            return self.complexity_analyzer.get_complexity_report()
+        return {"status": "Análisis de complejidad no disponible"}
+    
+    def get_quality_report(self) -> Dict[str, any]:
+        """Obtiene reporte de calidad de resúmenes"""
+        if self.dynamic_context_enabled and self.summary_evaluator:
+            return self.summary_evaluator.get_quality_report()
+        return {"status": "Evaluación de calidad no disponible"}
+    
+    def get_context_limits(self) -> Dict[str, int]:
+        """Obtiene límites de contexto actuales"""
+        return self.context_limits.copy()
+    
+    def get_dynamic_status(self) -> Dict[str, any]:
+        """Obtiene estado completo del sistema dinámico"""
+        status = {
+            "dynamic_enabled": self.dynamic_context_enabled,
+            "current_limits": self.context_limits,
+            "sections_processed": self.section_count
+        }
+        
+        if self.dynamic_context_enabled:
+            status["complexity_report"] = self.get_complexity_report()
+            status["quality_report"] = self.get_quality_report()
+        
+        return status
+    
+    def reset_analysis(self):
+        """Reinicia análisis para una nueva historia"""
+        if self.dynamic_context_enabled:
+            if self.complexity_analyzer:
+                self.complexity_analyzer.reset_analysis()
+            if self.summary_evaluator:
+                self.summary_evaluator.reset_evaluation()
+        
+        # Reiniciar contadores
+        self.section_count = 0
+        self.current_chapter_content.clear()
+        
+        print_progress("🔄 Análisis dinámico reiniciado para nueva historia")
 
 
 # ===== ALIAS PARA COMPATIBILIDAD =====

@@ -4,6 +4,7 @@ from emergency_prompts import emergency_prompts
 from time import sleep
 import re
 import time  # Importación añadida para usar time.sleep()
+import os    # Importación añadida para variables de entorno
 
 # FASE 4: Importar configuración centralizada
 from config.defaults import get_config
@@ -222,8 +223,33 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
     if chapter_summaries is None:
         chapter_summaries = {}
 
-    # Inicializar el gestor de contexto progresivo y el sistema de resúmenes
-    context_manager = ProgressiveContextManager(framework)
+    # NUEVO: Inicializar el gestor de contexto con sistema dinámico
+    try:
+        from dynamic_context import DynamicContextCalculator, ModelContextProfile
+        
+        # Intentar detectar el modelo desde variables de entorno
+        model_type = os.environ.get("MODEL_TYPE", "ollama")
+        model_name = "unknown"
+        
+        # Crear calculador dinámico
+        context_calc = DynamicContextCalculator(model_name, model_type)
+        
+        # Inicializar contexto manager con perfil dinámico y LLM
+        context_manager = ProgressiveContextManager(
+            framework=framework,
+            llm=writer_chain.llm,  # Pasar LLM para micro-resúmenes
+            enable_micro_summaries=True,  # Activar micro-resúmenes
+            micro_summary_interval=3,     # Cada 3 secciones
+            model_profile=context_calc.profile
+        )
+        
+        print_progress("🧠 Sistema de contexto dinámico inicializado")
+        
+    except Exception as e:
+        print_progress(f"⚠️ Error inicializando contexto dinámico: {e}")
+        print_progress("🔄 Usando sistema de contexto tradicional")
+        context_manager = ProgressiveContextManager(framework)
+    
     summary_chain = ChapterSummaryChain()
 
     try:
@@ -390,6 +416,35 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             except Exception as e:
                 print_progress(f"⚠️ Error generando resumen final: {str(e)}")
                 chapter_summaries[chapter] = savepoint_summary
+            
+            # NUEVO: Mostrar reporte dinámico al finalizar el capítulo
+            try:
+                if hasattr(context_manager, 'get_dynamic_status'):
+                    dynamic_status = context_manager.get_dynamic_status()
+                    if dynamic_status.get('dynamic_enabled', False):
+                        complexity_report = dynamic_status.get('complexity_report', {})
+                        quality_report = dynamic_status.get('quality_report', {})
+                        
+                        print_progress("📊 REPORTE DINÁMICO DEL CAPÍTULO:")
+                        if complexity_report.get('overall_complexity'):
+                            print_progress(f"   Complejidad narrativa: {complexity_report['complexity_category']} "
+                                         f"({complexity_report['overall_complexity']:.2f})")
+                            entities = complexity_report.get('entities', {})
+                            print_progress(f"   Personajes detectados: {entities.get('character_count', 0)}")
+                            print_progress(f"   Ubicaciones detectadas: {entities.get('location_count', 0)}")
+                        
+                        if quality_report.get('average_quality'):
+                            print_progress(f"   Calidad de resúmenes: {quality_report['quality_category']} "
+                                         f"({quality_report['average_quality']:.2f})")
+                            print_progress(f"   Factor de agresividad: {quality_report['aggressiveness_factor']:.1f}x")
+                        
+                        current_limits = dynamic_status.get('current_limits', {})
+                        if current_limits:
+                            print_progress(f"   Límites dinámicos actuales:")
+                            print_progress(f"     - Sección: {current_limits.get('max_section_context', 'N/A')} chars")
+                            print_progress(f"     - Capítulo: {current_limits.get('max_chapter_context', 'N/A')} chars")
+            except Exception as e:
+                print_progress(f"⚠️ Error mostrando reporte dinámico: {e}")
             
             print_progress(f"✓ Capítulo {chapter} completado: {len(chapter_content)} secciones")
 

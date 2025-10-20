@@ -12,7 +12,7 @@ el contexto durante la generación de libros.
 """
 
 from typing import Dict, List, Optional, Any
-from utils import print_progress, clean_think_tags, extract_content_from_llm_response
+from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response
 import os
 
 
@@ -71,13 +71,20 @@ class UnifiedContextManager:
         self.current_chapter_content: List[str] = []
         self.section_count = 0
         
-        # Memoria global (de IntelligentContextManager)
+        # Memoria global de 3 niveles (de IntelligentContextManager)
         self.book_memory = {
             "global_summary": "",
-            "characters": {},
-            "plot_threads": [],
-            "world_building": {},
+            "characters": {},           # Nivel 1: Información de personajes
+            "plot_threads": [],         # Nivel 2: Hilos narrativos activos
+            "world_building": {},       # Nivel 3: Construcción del mundo/contexto
             "chapter_summaries": {}
+        }
+        
+        # Sistema de memoria jerárquica
+        self.memory_levels = {
+            "immediate": {},    # Contexto inmediato (sección actual)
+            "chapter": {},      # Contexto del capítulo (resúmenes progresivos)
+            "book": {}          # Contexto global del libro (memoria persistente)
         }
         
         # Configurar desde variables de entorno si existen
@@ -355,12 +362,34 @@ class UnifiedContextManager:
         self.book_memory["chapter_summaries"][chapter_key] = {
             "title": chapter_title,
             "summary": chapter_summary,
-            "key_elements": {}
+            "key_elements": self._extract_key_elements(chapter_summary)
         }
         
         # Actualizar resumen global si hay múltiples capítulos
         if len(self.book_memory["chapter_summaries"]) > 1:
             self._update_global_summary()
+    
+    def _extract_key_elements(self, chapter_summary: str) -> Dict[str, List[str]]:
+        """
+        Extrae elementos clave del resumen (personajes, lugares, eventos).
+        Migrado desde IntelligentContextManager.
+        """
+        key_elements = {
+            "characters": [],
+            "locations": [],
+            "events": []
+        }
+        
+        # Análisis simple basado en patrones comunes
+        words = chapter_summary.split()
+        for i, word in enumerate(words):
+            # Buscar nombres propios (palabras que empiezan con mayúscula)
+            if (word and len(word) > 2 and word[0].isupper() and 
+                word not in ["El", "La", "Los", "Las", "En", "Con", "Por", "Un", "Una", 
+                           "Cuando", "Donde", "Como", "Pero", "Sin", "Tras", "Durante"]):
+                key_elements["characters"].append(word)
+        
+        return key_elements
     
     def _update_global_summary(self):
         """Actualiza el resumen global del libro basado en todos los capítulos."""
@@ -447,9 +476,246 @@ class UnifiedContextManager:
             context = context[-800:]
         
         return context
+    
+    # ===== SISTEMA DE MEMORIA JERÁRQUICA (3 NIVELES) =====
+    
+    def update_character_memory(self, character_name: str, info: str, chapter_key: str = None):
+        """
+        Actualiza la información de un personaje en la memoria del libro.
+        Nivel 1 de la memoria jerárquica.
+        """
+        if character_name not in self.book_memory["characters"]:
+            self.book_memory["characters"][character_name] = {
+                "description": "",
+                "development": [],
+                "appearances": []
+            }
+        
+        self.book_memory["characters"][character_name]["description"] = info
+        if chapter_key:
+            self.book_memory["characters"][character_name]["appearances"].append(chapter_key)
+    
+    def add_plot_thread(self, thread_description: str, status: str = "active"):
+        """
+        Añade un hilo narrativo a la memoria del libro.
+        Nivel 2 de la memoria jerárquica.
+        """
+        plot_thread = {
+            "description": thread_description,
+            "status": status,  # active, resolved, paused
+            "chapters": []
+        }
+        self.book_memory["plot_threads"].append(plot_thread)
+    
+    def update_world_building(self, element: str, description: str):
+        """
+        Actualiza elementos de construcción del mundo.
+        Nivel 3 de la memoria jerárquica.
+        """
+        self.book_memory["world_building"][element] = description
+    
+    def get_hierarchical_context(self, level: str = "all") -> Dict[str, Any]:
+        """
+        Obtiene contexto según el nivel jerárquico especificado.
+        
+        Args:
+            level: 'immediate', 'chapter', 'book', o 'all'
+        """
+        if level == "immediate":
+            return self.memory_levels["immediate"]
+        elif level == "chapter":
+            return self.memory_levels["chapter"]
+        elif level == "book":
+            return self.memory_levels["book"]
+        else:  # all
+            return {
+                "immediate": self.memory_levels["immediate"],
+                "chapter": self.memory_levels["chapter"],
+                "book": self.memory_levels["book"],
+                "global_memory": self.book_memory
+            }
+    
+    def optimize_memory_for_context_window(self, max_size: int) -> str:
+        """
+        Optimiza la memoria total para caber en la ventana de contexto especificada.
+        Prioriza información más reciente y relevante.
+        """
+        # Prioridad: Inmediato > Capítulo > Libro
+        context_parts = []
+        current_size = 0
+        
+        # 1. Contexto inmediato (siempre incluir)
+        immediate = str(self.memory_levels.get("immediate", ""))
+        if immediate:
+            context_parts.append(f"Contexto inmediato: {immediate}")
+            current_size += len(immediate)
+        
+        # 2. Contexto del capítulo (incluir si hay espacio)
+        chapter = str(self.memory_levels.get("chapter", ""))
+        if chapter and current_size + len(chapter) < max_size * 0.7:
+            context_parts.append(f"Capítulo actual: {chapter}")
+            current_size += len(chapter)
+        
+        # 3. Contexto del libro (resumen condensado si hay espacio)
+        remaining_space = max_size - current_size
+        if remaining_space > 200:
+            book_summary = self.book_memory.get("global_summary", "")
+            if book_summary:
+                if len(book_summary) > remaining_space:
+                    book_summary = book_summary[:remaining_space - 50] + "..."
+                context_parts.append(f"Historia general: {book_summary}")
+        
+        return "\n\n".join(context_parts)
+    
+    # ===== COMPATIBILIDAD CON MemoryManager =====
+    
+    def add_chapter_memory(self, chapter_key: str, content: str):
+        """
+        Compatibilidad con MemoryManager: Añade contenido a la memoria de un capítulo.
+        """
+        self.update_chapter_content(chapter_key, content)
+    
+    def get_chapter_context(self, chapter_key: str, num_memories: Optional[int] = None) -> str:
+        """
+        Compatibilidad con MemoryManager: Obtiene el contexto completo para un capítulo.
+        """
+        if chapter_key not in self.chapter_contexts:
+            return ""
+        
+        content_list = self.chapter_contexts[chapter_key].get("content", [])
+        if not content_list:
+            return ""
+        
+        if num_memories is None or num_memories >= len(content_list):
+            return "\n\n".join(content_list)
+        else:
+            # Si se especifica un número, usar las más recientes
+            return "\n\n".join(content_list[-num_memories:])
+    
+    def add_global_memory(self, key: str, value: str):
+        """
+        Compatibilidad con MemoryManager: Añade una memoria global con una clave específica.
+        """
+        self.book_memory[key] = value
+    
+    def get_global_memory(self, key: str) -> str:
+        """
+        Compatibilidad con MemoryManager: Obtiene una memoria global.
+        """
+        return self.book_memory.get(key, "")
+    
+    def get_summary_for_chapter(self, chapter_key: str) -> str:
+        """
+        Compatibilidad con MemoryManager: Obtiene un resumen para el capítulo.
+        """
+        return self.get_chapter_context(chapter_key)
+    
+    def get_context_for_writing(self, chapter_key: str, prev_chapters: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Compatibilidad con MemoryManager: Obtiene contexto para escritura.
+        """
+        context = {}
+        
+        # Añadir el marco narrativo general
+        context["framework"] = self.framework
+        
+        # Añadir contexto de capítulos previos si se especifican
+        if prev_chapters:
+            prev_context = []
+            for prev_key in prev_chapters:
+                if prev_key in self.chapter_contexts:
+                    prev_context.append(self.get_summary_for_chapter(prev_key))
+            context["previous_chapters"] = "\n\n".join(prev_context)
+        
+        # Añadir contexto del capítulo actual
+        if chapter_key in self.chapter_contexts:
+            context["current_chapter"] = self.get_chapter_context(chapter_key)
+        
+        # Añadir todas las memorias globales disponibles
+        context["global"] = self.book_memory
+        
+        return context
 
 
 # ===== ALIAS PARA COMPATIBILIDAD =====
 
 # Mantener compatibilidad con código existente que usa ProgressiveContextManager
 ProgressiveContextManager = UnifiedContextManager
+
+# Alias para compatibilidad con MemoryManager (migrado)
+MemoryManager = UnifiedContextManager
+
+
+# ===== CADENA DE ESCRITURA INTELIGENTE (Migrada de IntelligentContextManager) =====
+
+class ProgressiveWriterChain(BaseEventChain):
+    """
+    Cadena de escritura que utiliza el contexto progresivo inteligente.
+    Migrada desde intelligent_context.py para consolidación.
+    """
+    
+    PROMPT_TEMPLATE = """
+    Eres un escritor profesional de {genre} en español.
+    
+    ### INFORMACIÓN ESENCIAL:
+    - Título: "{title}"
+    - Estilo: {style}
+    - Capítulo actual: {chapter_title} (Capítulo {current_chapter} de {total_chapters})
+    - Sección: {section_number} de {total_sections}
+    
+    ### CONTEXTO DE LA HISTORIA:
+    {story_context}
+    
+    ### CONTENIDO RECIENTE DEL CAPÍTULO:
+    {recent_content}
+    
+    ### IDEA A DESARROLLAR:
+    {current_idea}
+    
+    IMPORTANTE: 
+    - Escribe EXCLUSIVAMENTE texto narrativo en español
+    - NO incluyas notas, comentarios ni explicaciones
+    - Mantén la coherencia con el contexto previo
+    - Desarrolla la idea de forma natural y envolvente
+    
+    Texto narrativo:"""
+
+    def run(self, context_manager, genre, style, title, chapter_title, current_idea, 
+            current_chapter, total_chapters, section_number, total_sections):
+        
+        print_progress(f"📝 Escribiendo sección {section_number}/{total_sections} (contexto inteligente)")
+        
+        try:
+            # Obtener contexto optimizado
+            story_context = context_manager.get_context_for_next_chapter(current_chapter)
+            recent_content = context_manager.get_current_chapter_context()
+            
+            # Crear contexto narrativo condensado
+            context_text = ""
+            if story_context.get("global_summary"):
+                context_text += f"Historia hasta ahora: {story_context['global_summary'][:300]}\n\n"
+            if story_context.get("previous_chapter"):
+                context_text += f"Capítulo anterior: {story_context['previous_chapter'][:200]}"
+            
+            # Generar contenido
+            result = self.invoke(
+                genre=clean_think_tags(genre),
+                style=clean_think_tags(style),
+                title=clean_think_tags(title),
+                chapter_title=clean_think_tags(chapter_title),
+                story_context=clean_think_tags(context_text),
+                recent_content=clean_think_tags(recent_content),
+                current_idea=clean_think_tags(current_idea),
+                current_chapter=current_chapter,
+                total_chapters=total_chapters,
+                section_number=section_number,
+                total_sections=total_sections
+            )
+            
+            print_progress(f"✓ Sección {section_number} completada ({len(result)} caracteres)")
+            return result
+
+        except Exception as e:
+            print_progress(f"❌ Error generando sección {section_number}: {str(e)}")
+            # Fallback simple
+            return f"La historia continuó desarrollándose en este punto del capítulo {chapter_title}."

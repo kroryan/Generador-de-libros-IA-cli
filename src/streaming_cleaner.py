@@ -1,15 +1,18 @@
 """
-Sistema de Limpieza para Streaming de Texto.
+Sistema de Limpieza para Streaming de Texto con Buffer de Palabras.
 
 Este módulo proporciona limpieza en tiempo real para streams de texto,
 manejando casos especiales como tags de pensamiento que pueden aparecer
-fragmentados en múltiples chunks.
+fragmentados en múltiples chunks, y acumulando tokens hasta formar
+palabras completas antes de enviarlas.
 
 Reemplaza la lógica manual de detección de tags en OutputCapture.
 """
 
+import os
+import re
 from enum import Enum
-from typing import Tuple, Optional, Callable
+from typing import Tuple, Optional, Callable, List
 from text_cleaning import clean_ansi_codes, clean_think_tags
 
 
@@ -45,9 +48,18 @@ class StreamingCleaner:
         self.think_buffer = ""
         self.partial_buffer = ""  # Para detectar tags fragmentados
         
+        # NUEVO: Buffer para acumular palabras completas
+        self.word_buffer = ""
+        self.think_word_buffer = ""
+        
         self.on_normal_output = on_normal_output
         self.on_think_output = on_think_output
         self.buffer_threshold = buffer_threshold
+        
+        # Configuración del buffer de palabras desde variables de entorno
+        self.word_buffer_size = int(os.getenv('STREAMING_WORD_BUFFER_SIZE', '50'))
+        word_delims = os.getenv('STREAMING_WORD_DELIMITERS', ' ,.\n\t;:!?"\'()[]{}')
+        self.word_delimiters = list(word_delims)
         
         # Patrones de tags a detectar
         self.think_start_tag = "<think>"
@@ -147,28 +159,77 @@ class StreamingCleaner:
         return normal_out, think_out
     
     def _accumulate_think_data(self, data: str) -> Optional[str]:
-        """Acumula datos en el buffer de pensamiento."""
-        self.think_buffer += data
-        
-        # Solo enviar cuando hay suficiente texto o hay un salto de línea
-        if len(self.think_buffer) > self.buffer_threshold or '\n' in data:
-            if self.think_buffer.strip():
-                output = self.think_buffer.strip()
-                self.think_buffer = ""
-                return output
-        
-        return None
+        """Acumula datos en el buffer de pensamiento con buffer de palabras."""
+        return self._accumulate_word_data(data, is_think=True)
     
     def _accumulate_normal_data(self, data: str) -> Optional[str]:
-        """Acumula datos en el buffer normal."""
-        self.buffer += data
+        """Acumula datos en el buffer normal con buffer de palabras."""
+        return self._accumulate_word_data(data, is_think=False)
+    
+    def _accumulate_word_data(self, data: str, is_think: bool = False) -> Optional[str]:
+        """
+        Acumula datos en el buffer de palabras hasta detectar palabra completa.
         
-        # Solo enviar cuando hay suficiente texto o hay un salto de línea
-        if len(self.buffer) > self.buffer_threshold or '\n' in data:
-            if self.buffer.strip():
-                output = self.buffer.strip()
-                self.buffer = ""
-                return output
+        Args:
+            data: Datos a acumular
+            is_think: True si es para buffer de pensamiento, False para normal
+            
+        Returns:
+            Palabra completa lista para enviar o None si aún está acumulando
+        """
+        # Seleccionar el buffer apropiado
+        if is_think:
+            self.think_word_buffer += data
+            current_buffer = self.think_word_buffer
+        else:
+            self.word_buffer += data
+            current_buffer = self.word_buffer
+        
+        # Buscar delimitadores en el nuevo data que indican fin de palabra
+        has_delimiter_in_data = any(delim in data for delim in self.word_delimiters)
+        
+        # Enviar si:
+        # 1. El nuevo chunk contiene delimitador (fin de palabra)
+        # 2. Buffer muy largo (evitar bloqueo en palabras muy largas)
+        # 3. Hay salto de línea (párrafo completo)
+        should_flush = (
+            has_delimiter_in_data or 
+            len(current_buffer) > self.word_buffer_size or
+            '\n' in data
+        )
+        
+        if should_flush and current_buffer.strip():
+            # Si hay delimitador, buscar hasta dónde enviar
+            if has_delimiter_in_data:
+                # Encontrar la posición del último delimitador
+                last_delim_pos = -1
+                for delim in self.word_delimiters:
+                    pos = current_buffer.rfind(delim)
+                    if pos > last_delim_pos:
+                        last_delim_pos = pos
+                
+                if last_delim_pos >= 0:
+                    # Enviar hasta el delimitador (inclusive)
+                    output = current_buffer[:last_delim_pos + 1].strip()
+                    # Mantener el resto en el buffer
+                    remaining = current_buffer[last_delim_pos + 1:]
+                    if is_think:
+                        self.think_word_buffer = remaining
+                    else:
+                        self.word_buffer = remaining
+                    
+                    if output:
+                        return output
+            else:
+                # No hay delimitador, enviar todo
+                output = current_buffer.strip()
+                if is_think:
+                    self.think_word_buffer = ""
+                else:
+                    self.word_buffer = ""
+                
+                if output:
+                    return output
         
         return None
     
@@ -181,7 +242,7 @@ class StreamingCleaner:
     
     def flush(self) -> Tuple[Optional[str], Optional[str]]:
         """
-        Flush de todos los buffers pendientes.
+        Flush de todos los buffers pendientes (incluyendo buffers de palabras).
         
         Returns:
             Tupla (normal_output, think_output) con cualquier contenido pendiente.
@@ -189,14 +250,25 @@ class StreamingCleaner:
         normal_out = None
         think_out = None
         
-        # Enviar buffer de pensamiento si estamos en modo pensamiento
-        if self.think_buffer and self.state == StreamState.IN_THINK_BLOCK:
+        # Enviar buffer de palabras de pensamiento si estamos en modo pensamiento
+        if self.think_word_buffer and self.state == StreamState.IN_THINK_BLOCK:
+            if self.think_word_buffer.strip():
+                think_out = self.think_word_buffer.strip()
+            self.think_word_buffer = ""
+        
+        # Enviar buffer de palabras normal si hay algo
+        if self.word_buffer:
+            if self.word_buffer.strip():
+                normal_out = self.word_buffer.strip()
+            self.word_buffer = ""
+        
+        # Fallback a buffers originales si los de palabras están vacíos
+        if not think_out and self.think_buffer and self.state == StreamState.IN_THINK_BLOCK:
             if self.think_buffer.strip():
                 think_out = self.think_buffer.strip()
             self.think_buffer = ""
         
-        # Enviar buffer normal si hay algo
-        if self.buffer:
+        if not normal_out and self.buffer:
             if self.buffer.strip():
                 normal_out = self.buffer.strip()
             self.buffer = ""
@@ -216,6 +288,9 @@ class StreamingCleaner:
         self.buffer = ""
         self.think_buffer = ""
         self.partial_buffer = ""
+        # Limpiar también los buffers de palabras
+        self.word_buffer = ""
+        self.think_word_buffer = ""
 
 
 class OutputCapture:
@@ -278,10 +353,21 @@ class OutputCapture:
     
     @property
     def buffer(self) -> str:
-        """Buffer normal actual."""
-        return self.cleaner.buffer
+        """Buffer normal actual (incluye buffer de palabras)."""
+        return self.cleaner.buffer + self.cleaner.word_buffer
     
     @property
     def think_buffer(self) -> str:
-        """Buffer de pensamiento actual."""
-        return self.cleaner.think_buffer
+        """Buffer de pensamiento actual (incluye buffer de palabras)."""
+        return self.cleaner.think_buffer + self.cleaner.think_word_buffer
+    
+    # Propiedades adicionales para inspección del buffer de palabras
+    @property
+    def word_buffer(self) -> str:
+        """Buffer de palabras normal actual."""
+        return self.cleaner.word_buffer
+    
+    @property
+    def think_word_buffer(self) -> str:
+        """Buffer de palabras de pensamiento actual."""
+        return self.cleaner.think_word_buffer

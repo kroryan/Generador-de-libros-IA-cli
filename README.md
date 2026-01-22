@@ -1,210 +1,217 @@
+```html
 <p align="center">
-  <img src="images/sample.png" alt="Generador de Novelas de Fantasía con LLMs" width="800">
-  <h1 align="center">📚 Generador de Novelas de Fantasía con LLMs</h1>
+  <img src="images/sample.png" alt="Fantasy Novel Generator with LLMs (ONLY SPANISH FOR NOW)" width="800">
+  <h1 align="center">📚 Fantasy Novel Generator with LLMs</h1>
 </p>
+```
 
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/Generador-de-libros-IA-cli)
 
-## ✨ Introducción
+## ✨ Introduction
 
-Este proyecto utiliza Large Language Models (LLMs) para generar novelas de fantasía completas con transparencia del proceso creativo.
+This project uses Large Language Models (LLMs) to generate complete fantasy novels with full transparency of the creative process.
 
-> **⚠️ AVISO**: Proyecto en fase temprana de desarrollo. Pueden existir bugs y limitaciones.
-
----
-
-## 🆕 Actualizaciones recientes (Octubre 2025)
-
-- 🌟 **Streaming en tiempo real mejorado**: Ahora el texto se transmite directamente sin fragmentación ni modificaciones.
-- 🎨 **Separación visual de pensamientos y respuestas**: Los pensamientos del modelo se muestran en magenta y las respuestas en cian.
-- 🛠️ **Lógica simplificada**: Eliminación de procesamiento innecesario para garantizar una experiencia más fluida.
-- 🚀 **Optimización de la interfaz web**: Mejoras en el diseño para una experiencia de usuario más intuitiva.
-
-
-## 🆕 Actualizaciones recientes (Mayo 2025)
-
-- 💾 **Sistema de puntos de guardado (savepoints)**: Implementación robusta que evita pérdidas de contexto durante la generación de textos largos
-- 🧠 **Gestión de contexto mejorada**: Optimización automática del contexto para mantener coherencia en historias extensas
-- 💻 **Modo comando mejorado**: Ahora puedes seleccionar modelos directamente con `--model` y listar los disponibles con `--list-models`
-- 📝 **Sistema de resúmenes entre capítulos** para mejorar la coherencia narrativa
-- 🔄 **Flujo narrativo mejorado** con contexto enriquecido para continuidad entre secciones
-- 📊 **Formateo profesional de documentos** con metadatos, márgenes y estilos optimizados
-- 📑 **Mejor organización textual** con procesamiento semántico de párrafos
-- 🧠 **Sistema de detección de modelos multi-API**: Detecta automáticamente modelos disponibles en Ollama, OpenAI, DeepSeek, Groq y proveedores personalizados
-- 🔧 **Configuración flexible mediante archivo .env**: Personaliza completamente todos los proveedores y modelos sin tocar el código
-- 🎨 **Visualización mejorada de pensamientos**: Los pensamientos del modelo ahora se muestran correctamente en amarillo y cambian a azul al terminar
-- 🖥️ **Interfaz web cyberpunk** completamente rediseñada
+> **⚠️ WARNING**: Early-stage project. Bugs and limitations may exist.
 
 ---
 
-## 🚀 Características Principales
+## 🆕 Recent Updates (October 2025)
 
-- 🧠 Soporte multi-API (Ollama, OpenAI, DeepSeek, Groq, Anthropic)
-- 📖 Generación completa de estructuras narrativas y personajes
-- 💾 Sistema de puntos de guardado para evitar pérdida de contexto
-- 🔄 Recuperación automática ante fallos del modelo
-- 📝 Sistema de resúmenes para coherencia narrativa
-- 🎨 Interfaz cyberpunk con visualización en tiempo real
-- 📤 Exportación a PDF/DOCX con formato profesional
-- ⚙️ Configuración flexible mediante archivo `.env`
-- 🔍 Transparencia del proceso con pensamientos del modelo
+* 🌟 **Improved real-time streaming**: Text is now streamed directly without fragmentation or modification.
+* 🎨 **Visual separation of thoughts and responses**: Model thoughts are shown in magenta and responses in cyan.
+* 🛠️ **Simplified logic**: Removal of unnecessary processing to ensure a smoother experience.
+* 🚀 **Web interface optimization**: UI improvements for a more intuitive user experience.
+
+## 🆕 Recent Updates (May 2025)
+
+* 💾 **Savepoints system**: Robust implementation that prevents context loss during long text generation
+* 🧠 **Improved context management**: Automatic context optimization to maintain coherence in long stories
+* 💻 **Enhanced command mode**: You can now select models directly with `--model` and list available ones with `--list-models`
+* 📝 **Inter-chapter summary system** to improve narrative coherence
+* 🔄 **Improved narrative flow** with enriched context for continuity between sections
+* 📊 **Professional document formatting** with optimized metadata, margins, and styles
+* 📑 **Improved text organization** with semantic paragraph processing
+* 🧠 **Multi-API model detection system**: Automatically detects models available in Ollama, OpenAI, DeepSeek, Groq, and custom providers
+* 🔧 **Flexible configuration via `.env` file**: Fully customize all providers and models without touching the code
+* 🎨 **Improved thought visualization**: Model thoughts are now displayed correctly in yellow and turn blue when finished
+* 🖥️ **Fully redesigned cyberpunk web interface**
 
 ---
 
-## 🖥️ Demo Interactiva
+## 🚀 Key Features
 
-![Interfaz del Generador](images/sample.png)
+* 🧠 Multi-API support (Ollama, OpenAI, DeepSeek, Groq, Anthropic)
+* 📖 Full generation of narrative structures and characters
+* 💾 Savepoints system to prevent context loss
+* 🔄 Automatic recovery from model failures
+* 📝 Summary system for narrative coherence
+* 🎨 Cyberpunk interface with real-time visualization
+* 📤 PDF/DOCX export with professional formatting
+* ⚙️ Flexible configuration via `.env` file
+* 🔍 Transparent process with model thoughts
 
 ---
 
-## ⚙️ Configuración Rápida
+## 🖥️ Interactive Demo
+
+![Generator Interface](images/sample.png)
+
+---
+
+## ⚙️ Quick Setup
 
 ```bash
 git clone https://github.com/kroryan/Generador-de-libros-IA-cli.git
 cd Generador-de-libros-IA-cli
 pip install -r requirements.txt
 
-# Modo web (interfaz gráfica)
+# Web mode (graphical interface)
 python src/app.py --web  
 
-# Modo consola (recomendado para mejor rendimiento)
+# Console mode (recommended for better performance)
 python src/app.py
 ```
 
-Para el modo web, visita `http://localhost:5000` en tu navegador.
+For web mode, visit `http://localhost:5000` in your browser.
 
 ---
 
-## � Uso con Docker
+## 🐳 Docker Usage
 
-Puedes ejecutar la aplicación dentro de un contenedor Docker para facilitar su despliegue.
+You can run the application inside a Docker container for easier deployment.
 
-1) Construir la imagen (desde la raíz del proyecto):
+1. Build the image (from the project root):
 
 ```powershell
 docker build -t generador-libros:latest .
 ```
 
-2) Ejecutar el contenedor (montando un archivo `.env` en la raíz del proyecto y el volumen `docs` para salidas):
+2. Run the container (mounting a `.env` file at the project root and the `docs` volume for outputs):
 
 ```powershell
 docker run --rm -p 5000:5000 -v ${PWD}\.env:/app/.env:ro -v ${PWD}\docs:/app/docs generador-libros:latest
 ```
 
-3) Usar docker-compose (recomendado para desarrollo):
+3. Use docker-compose (recommended for development):
 
 ```powershell
 docker compose up --build
 ```
 
-Notas:
-- No incluyas tus claves/API keys dentro de la imagen. Usa un archivo `.env` en la raíz y móntalo como volumen (ya está configurado en `docker-compose.yml`).
-- El servicio expone el puerto `5000` por defecto.
-- Los archivos de salida se escribirán en la carpeta `docs/` en tu host gracias al volumen.
+Notes:
 
+* Do not include your keys/API keys inside the image. Use a `.env` file at the root and mount it as a volume (already configured in `docker-compose.yml`).
+* The service exposes port `5000` by default.
+* Output files will be written to the `docs/` folder on your host thanks to the volume.
 
-## �💻 Uso en Línea de Comandos
+---
 
-El programa ofrece una interfaz de línea de comandos potente con selección explícita de modelos:
+## 💻 Command Line Usage
 
-### 📋 Opciones disponibles
+The program offers a powerful command-line interface with explicit model selection:
 
-- **Listar modelos disponibles**:
+### 📋 Available Options
+
+* **List available models**:
+
   ```bash
   python src/app.py --list-models
   ```
 
-- **Generar libro con un modelo específico**:
+* **Generate a book with a specific model**:
+
   ```bash
   python src/app.py --model groq:llama3-8b-8192
   ```
 
-- **Iniciar interfaz web con un modelo preseleccionado**:
-  ```bash
-  python src/app.py --web 
+* **Start the web interface with a preselected model**:
 
   ```bash
   python src/app.py --web 
   ```
 
-### 🔧 Interacción con el archivo .env
+### 🔧 Interaction with the `.env` file
 
-- Si no especificas un modelo con `--model`, el programa usará el valor de `MODEL_TYPE` del archivo `.env`
-- Puedes configurar tu archivo `.env` para establecer un modelo predeterminado:
-  ```
+* If you do not specify a model with `--model`, the program will use the `MODEL_TYPE` value from the `.env` file
+
+* You can configure your `.env` file to set a default model:
+
+  ```env
   MODEL_TYPE=groq
   GROQ_MODEL=llama3-8b-8192
-  GROQ_API_KEY=tu_clave_api
+  GROQ_API_KEY=your_api_key
   ```
 
-- La prioridad de selección de modelos es:
-  1. Modelo especificado con `--model`
-  2. Valor de `MODEL_TYPE` en `.env`
-  3. Fallback a otros proveedores configurados
+* Model selection priority:
+
+  1. Model specified with `--model`
+  2. `MODEL_TYPE` value in `.env`
+  3. Fallback to other configured providers
 
 ---
 
-## 🧠 Sistema de Puntos de Guardado (Savepoints)
+## 🧠 Savepoints System
 
-El generador ahora incluye un robusto sistema de puntos de guardado que:
+The generator now includes a robust savepoints system that:
 
-- 💾 **Crea resúmenes periódicos** durante la generación del contenido 
-- 🔄 **Mantiene la coherencia narrativa** incluso en textos muy extensos
-- 🛡️ **Previene la pérdida de contexto** que suele ocurrir en modelos LLM
-- 🚀 **Permite generar libros completos** sin interrupciones por límites de contexto
-- 🔍 **Optimiza automáticamente el contexto** para evitar sobrecarga del modelo
+* 💾 **Creates periodic summaries** during content generation
+* 🔄 **Maintains narrative coherence** even in very long texts
+* 🛡️ **Prevents context loss** commonly occurring in LLMs
+* 🚀 **Allows full book generation** without interruptions due to context limits
+* 🔍 **Automatically optimizes context** to avoid model overload
 
-Este sistema funciona creando "savepoints" estratégicos durante la escritura, especialmente después de secciones largas, permitiendo al modelo "recordar" efectivamente lo que sucedió antes sin tener que mantener todo el texto en el contexto.
+This system works by creating strategic savepoints during writing, especially after long sections, allowing the model to effectively "remember" what happened before without having to keep all the text in context.
 
 ---
 
-## 🛠️ Guía de Prompts
+## 🛠️ Prompt Guide
 
-### 🔍 Ubicación de los Prompts
+### 🔍 Prompt Locations
 
-| Archivo               | Clase                 | Propósito |
-|-----------------------|-----------------------|-----------|
-| `structure.py`        | `TitleChain`          | Título del libro |
-| `structure.py`        | `FrameworkChain`      | Marco narrativo |
-| `structure.py`        | `ChaptersChain`       | Estructura de capítulos |
-| `ideas.py`            | `IdeasChain`          | Desarrollo de ideas |
-| `writing.py`          | `WriterChain`         | Escritura narrativa |
-| `chapter_summary.py`  | `ChapterSummaryChain` | Resúmenes de capítulos |
+| File                 | Class                 | Purpose             |
+| -------------------- | --------------------- | ------------------- |
+| `structure.py`       | `TitleChain`          | Book title          |
+| `structure.py`       | `FrameworkChain`      | Narrative framework |
+| `structure.py`       | `ChaptersChain`       | Chapter structure   |
+| `ideas.py`           | `IdeasChain`          | Idea development    |
+| `writing.py`         | `WriterChain`         | Narrative writing   |
+| `chapter_summary.py` | `ChapterSummaryChain` | Chapter summaries   |
 
-### 📝 Personalización de Prompts
+### 📝 Prompt Customization
 
-1. Edite el archivo correspondiente
-2. Busque `PROMPT_TEMPLATE`
-3. Modifique manteniendo los marcadores `{variables}`
+1. Edit the corresponding file
+2. Look for `PROMPT_TEMPLATE`
+3. Modify it while keeping the `{variables}` placeholders
 
-**Ejemplo para estilo poético** (`writing.py`):
+**Example for poetic style** (`writing.py`):
+
 ```python
 PROMPT_TEMPLATE = """
-Eres un poeta y escritor de fantasía en español.
-Utiliza lenguaje metafórico y descripciones vívidas.
+You are a fantasy poet and writer in English.
+Use metaphorical language and vivid descriptions.
 ...
 """
 ```
 
 ---
 
-## 🌐 Proveedores Compatibles
+## 🌐 Supported Providers
 
-| Proveedor       | Modelos Ejemplo         | Requisitos         |
-|-----------------|-------------------------|--------------------|
-| Ollama (Local)  | llama3, mistral, phi3   | Servidor Ollama    |
-| OpenAI          | GPT-4, GPT-3.5          | API Key            |
-| Groq            | Llama3, Mixtral-8x7b    | API Key            |
-| DeepSeek        | DeepSeek-Chat           | API Key            |
-| Anthropic       | Claude-3                | API Key + librería |
-| Custom          | Cualquier API OpenAI compatible | Config. en .env |
+| Provider       | Example Models            | Requirements      |
+| -------------- | ------------------------- | ----------------- |
+| Ollama (Local) | llama3, mistral, phi3     | Ollama Server     |
+| OpenAI         | GPT-4, GPT-3.5            | API Key           |
+| Groq           | Llama3, Mixtral-8x7b      | API Key           |
+| DeepSeek       | DeepSeek-Chat             | API Key           |
+| Anthropic      | Claude-3                  | API Key + library |
+| Custom         | Any OpenAI-compatible API | `.env` config     |
 
 ---
 
-## ⚙️ Configuración .env Completa
+## ⚙️ Full `.env` Configuration
 
 ```env
-# Configuración de modelo predeterminado
+# Default model configuration
 MODEL_TYPE=ollama
 SELECTED_MODEL=ollama:llama3
 
@@ -213,52 +220,52 @@ OLLAMA_MODEL=llama3
 OLLAMA_API_BASE=http://localhost:11434
 
 # OpenAI
-OPENAI_API_KEY=tu_clave_aqui
+OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-4
-OPENAI_API_BASE=  # Opcional, para APIs compatibles
+OPENAI_API_BASE=  # Optional, for compatible APIs
 
 # Groq
-GROQ_API_KEY=tu_clave_aqui
+GROQ_API_KEY=your_key_here
 GROQ_MODEL=llama3-8b-8192
 GROQ_API_BASE=https://api.groq.com/openai/v1
 
 # DeepSeek
-DEEPSEEK_API_KEY=tu_clave_aqui
+DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_MODEL=deepseek-chat
 DEEPSEEK_API_BASE=https://api.deepseek.com
 
 # Anthropic
-ANTHROPIC_API_KEY=tu_clave_aqui
+ANTHROPIC_API_KEY=your_key_here
 ANTHROPIC_MODEL=claude-3-opus
 
-# Proveedores personalizados (compatible con OpenAI)
-CUSTOM_API_KEY=tu_clave_aqui
-CUSTOM_API_BASE=https://tu-api-personalizada.com/v1
-CUSTOM_MODEL=tu-modelo-personalizado
+# Custom providers (OpenAI-compatible)
+CUSTOM_API_KEY=your_key_here
+CUSTOM_API_BASE=https://your-custom-api.com/v1
+CUSTOM_MODEL=your-custom-model
 ```
 
 ---
 
-## 🚧 Proceso de Generación
+## 🚧 Generation Process
 
-1. **Estructura (20%)**: Título y marco narrativo
-2. **Ideas (40%)**: Desarrollo de capítulos y tramas
-3. **Escritura (85%)**: Narrativa detallada con gestión de savepoints
-4. **Publicación (100%)**: Exportación a PDF/DOCX con formato profesional
-
----
-
-## 🚧 Desarrollo Futuro
-
-- ✅ Sistema de puntos de guardado
-- ✅ Soporte para parámetros avanzados
-- ✅ Integración con más proveedores
-- ⏳ Generación de imágenes para ilustrar escenas
-- ⏳ Ajustes de personalidad avanzados
-- ⏳ Implementación de memoria persistente
+1. **Structure (20%)**: Title and narrative framework
+2. **Ideas (40%)**: Chapter and plot development
+3. **Writing (85%)**: Detailed narrative with savepoint management
+4. **Publishing (100%)**: PDF/DOCX export with professional formatting
 
 ---
 
-## 📱 Contacto
+## 🚧 Future Development
 
-Si por alguna razón quieres contactarme, puedes hacerlo entrando a este [Discord](https://discord.gg/TTmrXaeXM8) - mi nombre en el servidor es Allen.
+* ✅ Savepoints system
+* ✅ Advanced parameter support
+* ✅ Integration with more providers
+* ⏳ Image generation for scene illustration
+* ⏳ Advanced personality tuning
+* ⏳ Persistent memory implementation
+
+---
+
+## 📱 Contact
+
+If for any reason you want to contact me, you can do so by joining this [Discord](https://discord.gg/TTmrXaeXM8) — my name on the server is Allen.

@@ -1,13 +1,6 @@
-```html
-<p align="center">
-  <img src="images/sample.png" alt="Fantasy Novel Generator with LLMs (ONLY SPANISH FOR NOW)" width="800">
-  <h1 align="center">📚 Fantasy Novel Generator with LLMs</h1>
-</p>
-```
-
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/Generador-de-libros-IA-cli)
 
-## ✨ Introduction
+## ✨ Introduction (WORKS ONLY IN SPANISH FOR NOW)
 
 This project uses Large Language Models (LLMs) to generate complete fantasy novels with full transparency of the creative process.
 

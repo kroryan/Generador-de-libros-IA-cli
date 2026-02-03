@@ -225,7 +225,12 @@ class ColoredStreamingCallbackHandler(StreamingStdOutCallbackHandler):
         self.current_text = ""
 
 def print_progress(message):
-    print(f"\n{WHITE}> {message}{RESET}")
+    try:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe_message = message.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    except Exception:
+        safe_message = message
+    print(f"\n{WHITE}> {safe_message}{RESET}")
     sys.stdout.flush()
 
 def clean_think_tags(text):

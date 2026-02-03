@@ -140,6 +140,14 @@ class LoggingConfig:
     @staticmethod
     def setup_logging():
         """Configura el sistema de logging basado en variables de entorno"""
+        # Asegurar que stdout/stderr no fallen con caracteres no ASCII en Windows
+        try:
+            if hasattr(sys.stdout, "reconfigure"):
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            if hasattr(sys.stderr, "reconfigure"):
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
         
         # Configuración desde variables de entorno
         log_level = os.environ.get("LOG_LEVEL", "INFO").upper()

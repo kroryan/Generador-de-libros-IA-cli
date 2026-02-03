@@ -1,10 +1,16 @@
 from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response
+from config.defaults import get_config
+from retry_strategy import RetryableException
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 
 # Importar el sistema unificado de contexto
 from unified_context import UnifiedContextManager, ContextMode
 
 # Alias para compatibilidad con código existente
 ProgressiveContextManager = UnifiedContextManager
+
+_summary_config = get_config().summary
 
 class ChapterSummaryChain(BaseEventChain):
     """Genera resúmenes de capítulos para mantener la coherencia narrativa entre ellos."""
@@ -60,12 +66,16 @@ class ChapterSummaryChain(BaseEventChain):
     
     Resumen actualizado:"""
 
-    def extract_key_segments(self, text, max_segments=3, segment_length=1000):
+    def extract_key_segments(self, text, max_segments=None, segment_length=None):
         """
         Extrae segmentos clave del texto usando sistema adaptativo.
         
         MIGRADO: Ahora usa text_segment_extractor.py para lógica adaptativa.
         """
+        if max_segments is None:
+            max_segments = _summary_config.chapter_summary_max_segments
+        if segment_length is None:
+            segment_length = _summary_config.chapter_summary_segment_length
         from text_segment_extractor import extract_key_segments as extract_adaptive
         return extract_adaptive(text, max_segments, segment_length)
 
@@ -79,36 +89,42 @@ class ChapterSummaryChain(BaseEventChain):
         
         try:
             # Extraer solo fragmentos clave de la nueva sección
-            if len(new_section) > 1500:
+            section_limit = _summary_config.savepoint_section_max_chars
+            if len(new_section) > section_limit:
                 # Tomar solo inicio y final (donde suele estar la información clave)
-                summary_section = new_section[:750] + "\n\n[...]\n\n" + new_section[-750:]
+                head_len = section_limit // 2
+                tail_len = section_limit - head_len
+                summary_section = new_section[:head_len] + "\n\n[...]\n\n" + new_section[-tail_len:]
             else:
                 summary_section = new_section
-                
-            # Si total_chapters no se proporciona, usar un valor predeterminado
-            if total_chapters is None:
-                total_chapters = 10  # Valor predeterminado razonable
-                
-            # El parámetro chapter_content es diferente de new_section
-            # new_section es el texto nuevo a incorporar en el resumen
-            # chapter_content es necesario para el template base, pero no para el incremental
-            
-            # Usar el template PROGRESSIVE_SUMMARY_TEMPLATE con los parámetros correctos
-            result = self.invoke(
-                title=clean_think_tags(title),
-                chapter_num=chapter_num,
-                chapter_title=clean_think_tags(chapter_title),
-                current_summary=clean_think_tags(current_summary),
-                new_section=clean_think_tags(summary_section)
+
+            prompt = PromptTemplate(
+                template=self.PROGRESSIVE_SUMMARY_TEMPLATE,
+                input_variables=["title", "chapter_num", "chapter_title", "current_summary", "new_section"]
             )
-            
-            if not result:
-                raise ValueError("No se generó contenido válido para el resumen")
-                
+            chain = LLMChain(llm=self.llm, prompt=prompt, verbose=True)
+
+            def _execute():
+                result = chain({
+                    "title": clean_think_tags(title),
+                    "chapter_num": chapter_num,
+                    "chapter_title": clean_think_tags(chapter_title),
+                    "current_summary": clean_think_tags(current_summary),
+                    "new_section": clean_think_tags(summary_section)
+                })
+
+                text_result = extract_content_from_llm_response(result)
+                cleaned = clean_think_tags(text_result)
+                if not cleaned or len(cleaned.strip()) < _summary_config.savepoint_summary_min_chars:
+                    raise RetryableException("Resumen incremental vacio o muy corto")
+                return cleaned
+
+            result = self.retry_strategy.execute(_execute)
+
             # Limitar longitud del resumen incremental para evitar crecimiento excesivo
-            if len(result) > 500:
+            if len(result) > _summary_config.savepoint_summary_max_chars:
                 print_progress("Resumen demasiado largo, truncando...")
-                result = result[:500] + "..."
+                result = result[:_summary_config.savepoint_summary_max_chars] + "..."
                 
             return result
             
@@ -122,9 +138,11 @@ class ChapterSummaryChain(BaseEventChain):
         
         try:
             # Preparar el contenido de manera más eficiente
-            summarized_content = self.extract_key_segments(chapter_content, 
-                                                         max_segments=3, 
-                                                         segment_length=1000)
+            summarized_content = self.extract_key_segments(
+                chapter_content,
+                max_segments=_summary_config.chapter_summary_max_segments,
+                segment_length=_summary_config.chapter_summary_segment_length
+            )
             
             # Corrección: Añadir explícitamente el parámetro template con el valor PROMPT_TEMPLATE
             result = self.invoke(
@@ -140,9 +158,9 @@ class ChapterSummaryChain(BaseEventChain):
                 raise ValueError("No se generó contenido válido para el resumen")
             
             # Limitar longitud del resumen final para no sobrecargar el contexto
-            if len(result) > 300:
+            if len(result) > _summary_config.chapter_summary_max_chars:
                 print_progress("Resumen final demasiado largo, truncando...")
-                result = result[:300] + "..."
+                result = result[:_summary_config.chapter_summary_max_chars] + "..."
             
             print_progress(f"Resumen final del capítulo {chapter_num} completado")
             return result

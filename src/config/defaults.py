@@ -185,20 +185,93 @@ class ContextConfig:
     - 2000 caracteres (contexto limitado)
     - 8000 caracteres (contexto estándar)
     - 5000 caracteres (acumulación máxima)
+    - 1000 caracteres (resumen global)
     """
     limited_context_size: int = 2000
     standard_context_size: int = 8000
     savepoint_interval: int = 3  # Cada cuántas secciones crear savepoint
     max_context_accumulation: int = 5000
+    global_context_size: int = 1000
+    enable_micro_summaries: bool = False
+    micro_summary_interval: int = 3
     
     @classmethod
     def from_env(cls) -> 'ContextConfig':
         """Crea configuración desde variables de entorno."""
+        enable_micro_env = os.getenv('CONTEXT_ENABLE_MICRO_SUMMARIES', '').lower()
+        enable_micro = enable_micro_env in ['true', '1', 'yes', 'on']
+        interval_env = os.getenv('CONTEXT_MICRO_SUMMARY_INTERVAL', '')
+        if not interval_env:
+            # Legacy fallback
+            interval_env = os.getenv('MICRO_SUMMARY_INTERVAL', '')
+        micro_interval = int(interval_env) if interval_env.isdigit() else 3
+
         return cls(
             limited_context_size=int(os.getenv('CONTEXT_LIMITED_SIZE', '2000')),
             standard_context_size=int(os.getenv('CONTEXT_STANDARD_SIZE', '8000')),
             savepoint_interval=int(os.getenv('CONTEXT_SAVEPOINT_INTERVAL', '3')),
-            max_context_accumulation=int(os.getenv('CONTEXT_MAX_ACCUMULATION', '5000'))
+            max_context_accumulation=int(os.getenv('CONTEXT_MAX_ACCUMULATION', '5000')),
+            global_context_size=int(os.getenv('CONTEXT_GLOBAL_LIMIT', '1000')),
+            enable_micro_summaries=enable_micro,
+            micro_summary_interval=micro_interval
+        )
+
+
+@dataclass
+class SummaryConfig:
+    """
+    Configuración de límites y umbrales para resúmenes y contenidos cortos.
+    Centraliza valores hardcodeados en writing.py, chapter_summary.py y unified_context.py.
+    """
+    savepoint_section_max_chars: int = 1500
+    savepoint_summary_max_chars: int = 500
+    savepoint_summary_min_chars: int = 20
+    savepoint_emergency_section_chars: int = 300
+
+    chapter_summary_max_chars: int = 300
+    chapter_summary_min_chars: int = 30
+    chapter_summary_segment_length: int = 1000
+    chapter_summary_max_segments: int = 3
+    chapter_summary_optimized_max_chars: int = 3000
+    chapter_summary_optimized_part_chars: int = 1000
+    chapter_summary_optimized_middle_chars: int = 500
+    intelligent_chapter_summary_max_chars: int = 500
+
+    micro_summary_prompt_max_chars: int = 1500
+    micro_summary_min_chars: int = 20
+    micro_summary_base_max_words: int = 100
+
+    global_summary_condense_threshold_chars: int = 800
+    global_summary_max_chars: int = 400
+    global_summary_truncate_chars: int = 500
+    current_chapter_context_max_chars: int = 800
+
+    section_min_chars: int = 50
+
+    @classmethod
+    def from_env(cls) -> 'SummaryConfig':
+        """Crea configuración desde variables de entorno."""
+        return cls(
+            savepoint_section_max_chars=int(os.getenv('SUMMARY_SAVEPOINT_SECTION_MAX_CHARS', '1500')),
+            savepoint_summary_max_chars=int(os.getenv('SUMMARY_SAVEPOINT_MAX_CHARS', '500')),
+            savepoint_summary_min_chars=int(os.getenv('SUMMARY_SAVEPOINT_MIN_CHARS', '20')),
+            savepoint_emergency_section_chars=int(os.getenv('SUMMARY_SAVEPOINT_EMERGENCY_SECTION_CHARS', '300')),
+            chapter_summary_max_chars=int(os.getenv('SUMMARY_CHAPTER_MAX_CHARS', '300')),
+            chapter_summary_min_chars=int(os.getenv('SUMMARY_CHAPTER_MIN_CHARS', '30')),
+            chapter_summary_segment_length=int(os.getenv('SUMMARY_CHAPTER_SEGMENT_LENGTH', '1000')),
+            chapter_summary_max_segments=int(os.getenv('SUMMARY_CHAPTER_MAX_SEGMENTS', '3')),
+            chapter_summary_optimized_max_chars=int(os.getenv('SUMMARY_CHAPTER_OPTIMIZED_MAX_CHARS', '3000')),
+            chapter_summary_optimized_part_chars=int(os.getenv('SUMMARY_CHAPTER_OPTIMIZED_PART_CHARS', '1000')),
+            chapter_summary_optimized_middle_chars=int(os.getenv('SUMMARY_CHAPTER_OPTIMIZED_MIDDLE_CHARS', '500')),
+            intelligent_chapter_summary_max_chars=int(os.getenv('SUMMARY_INTELLIGENT_CHAPTER_MAX_CHARS', '500')),
+            micro_summary_prompt_max_chars=int(os.getenv('SUMMARY_MICRO_PROMPT_MAX_CHARS', '1500')),
+            micro_summary_min_chars=int(os.getenv('SUMMARY_MICRO_MIN_CHARS', '20')),
+            micro_summary_base_max_words=int(os.getenv('SUMMARY_MICRO_BASE_MAX_WORDS', '100')),
+            global_summary_condense_threshold_chars=int(os.getenv('SUMMARY_GLOBAL_CONDENSE_THRESHOLD_CHARS', '800')),
+            global_summary_max_chars=int(os.getenv('SUMMARY_GLOBAL_MAX_CHARS', '400')),
+            global_summary_truncate_chars=int(os.getenv('SUMMARY_GLOBAL_TRUNCATE_CHARS', '500')),
+            current_chapter_context_max_chars=int(os.getenv('SUMMARY_CURRENT_CHAPTER_CONTEXT_MAX_CHARS', '800')),
+            section_min_chars=int(os.getenv('SUMMARY_SECTION_MIN_CHARS', '50'))
         )
 
 
@@ -324,6 +397,7 @@ class AppConfig:
     socketio: SocketIOConfig = field(default_factory=SocketIOConfig)
     rate_limit: RateLimitConfig = field(default_factory=RateLimitConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
+    summary: SummaryConfig = field(default_factory=SummaryConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     few_shot: FewShotConfig = field(default_factory=FewShotConfig)
@@ -341,6 +415,7 @@ class AppConfig:
             socketio=SocketIOConfig.from_env(),
             rate_limit=RateLimitConfig.from_env(),
             context=ContextConfig.from_env(),
+            summary=SummaryConfig.from_env(),
             llm=LLMConfig.from_env(),
             generation=GenerationConfig.from_env(),
             few_shot=FewShotConfig.from_env()
@@ -403,6 +478,30 @@ class AppConfig:
             errors.append(
                 "CONTEXT_MAX_ACCUMULATION debe ser >= 1000 caracteres"
             )
+        if self.context.global_context_size < 200:
+            errors.append("CONTEXT_GLOBAL_LIMIT debe ser >= 200 caracteres")
+        if self.context.micro_summary_interval < 1:
+            errors.append("CONTEXT_MICRO_SUMMARY_INTERVAL debe ser >= 1")
+
+        # Validar SummaryConfig
+        if self.summary.savepoint_section_max_chars < 200:
+            errors.append("SUMMARY_SAVEPOINT_SECTION_MAX_CHARS debe ser >= 200")
+        if self.summary.savepoint_summary_max_chars < 50:
+            errors.append("SUMMARY_SAVEPOINT_MAX_CHARS debe ser >= 50")
+        if self.summary.savepoint_summary_min_chars < 5:
+            errors.append("SUMMARY_SAVEPOINT_MIN_CHARS debe ser >= 5")
+        if self.summary.chapter_summary_max_chars < 50:
+            errors.append("SUMMARY_CHAPTER_MAX_CHARS debe ser >= 50")
+        if self.summary.chapter_summary_segment_length < 200:
+            errors.append("SUMMARY_CHAPTER_SEGMENT_LENGTH debe ser >= 200")
+        if self.summary.chapter_summary_max_segments < 1:
+            errors.append("SUMMARY_CHAPTER_MAX_SEGMENTS debe ser >= 1")
+        if self.summary.micro_summary_prompt_max_chars < 200:
+            errors.append("SUMMARY_MICRO_PROMPT_MAX_CHARS debe ser >= 200")
+        if self.summary.micro_summary_base_max_words < 20:
+            errors.append("SUMMARY_MICRO_BASE_MAX_WORDS debe ser >= 20")
+        if self.summary.section_min_chars < 20:
+            errors.append("SUMMARY_SECTION_MIN_CHARS debe ser >= 20")
         
         # Validar LLMConfig
         if self.llm.temperature < 0 or self.llm.temperature > 2:
@@ -447,6 +546,7 @@ class AppConfig:
             f"  socketio={self.socketio},\n"
             f"  rate_limit={self.rate_limit},\n"
             f"  context={self.context},\n"
+            f"  summary={self.summary},\n"
             f"  llm={self.llm},\n"
             f"  generation={self.generation}\n"
             f")"
@@ -458,7 +558,7 @@ class AppConfig:
 # ============================================================================
 
 _config: Optional[AppConfig] = None
-_config_lock = __import__('threading').Lock()
+_config_lock = __import__('threading').RLock()
 
 
 def get_config() -> AppConfig:
@@ -553,6 +653,18 @@ def print_config(config: Optional[AppConfig] = None):
     print(f"  Standard Size: {config.context.standard_context_size} chars")
     print(f"  Savepoint Interval: {config.context.savepoint_interval}")
     print(f"  Max Accumulation: {config.context.max_context_accumulation} chars")
+    print(f"  Global Summary Limit: {config.context.global_context_size} chars")
+    print(f"  Micro Summaries Enabled: {config.context.enable_micro_summaries}")
+    print(f"  Micro Summary Interval: {config.context.micro_summary_interval}")
+
+    print("\n🧾 SUMMARY CONFIGURATION")
+    print(f"  Savepoint Section Max: {config.summary.savepoint_section_max_chars} chars")
+    print(f"  Savepoint Summary Max: {config.summary.savepoint_summary_max_chars} chars")
+    print(f"  Chapter Summary Max: {config.summary.chapter_summary_max_chars} chars")
+    print(f"  Intelligent Summary Max: {config.summary.intelligent_chapter_summary_max_chars} chars")
+    print(f"  Micro Summary Prompt Max: {config.summary.micro_summary_prompt_max_chars} chars")
+    print(f"  Global Summary Condense Threshold: {config.summary.global_summary_condense_threshold_chars} chars")
+    print(f"  Global Summary Max: {config.summary.global_summary_max_chars} chars")
     
     print("\n🤖 LLM CONFIGURATION")
     print(f"  Temperature: {config.llm.temperature}")

@@ -80,16 +80,18 @@ def test_word_fragmentation():
     
     # Palabras válidas cortas en español
     valid_short_words = {
-        'el', 'la', 'de', 'un', 'en', 'es', 'al', 'se', 'le', 'te', 
+        'a', 'y', 'o', 'u', 'e', 'ni',
+        'el', 'la', 'de', 'un', 'en', 'es', 'al', 'se', 'le', 'te',
         'me', 'lo', 'ya', 'si', 'no', 'su', 'tu', 'mi', 'yo', 'he',
-        'ha', 'ir', 'va', 've', 'da', 'di', 'do', 'fe', 'pi'
+        'ha', 'ir', 'va', 've', 'da', 'di', 'do', 'fe', 'pi', 'ti',
+        'ay', 'ah', 'eh', 'oh'
     }
     
     for output in test_buffer.normal_outputs:
         words = output.split()
         for word in words:
             # Limpiar puntuación para la verificación
-            clean_word = word.strip('.,;:!?"\'()[]{}').lower()
+            clean_word = word.strip('.,;:!WARN"\'()[]{}').lower()
             
             # Verificar si es un fragmento obvio
             # (palabra muy corta que no está en la lista de palabras válidas)
@@ -100,9 +102,9 @@ def test_word_fragmentation():
     print(f"Palabras fragmentadas detectadas: {len(fragmented_words)}")
     if fragmented_words:
         print(f"Fragmentos: {fragmented_words}")
-        print("❌ TEST FALLIDO: Se detectaron fragmentos de palabras")
+        print("FAIL: Se detectaron fragmentos de palabras")
     else:
-        print("✅ TEST EXITOSO: No se detectaron fragmentos de palabras")
+        print("OK: No se detectaron fragmentos de palabras")
     
     return len(fragmented_words) == 0
 
@@ -140,9 +142,9 @@ def test_think_blocks():
                len(test_buffer.think_outputs) > 0)
     
     if success:
-        print("✅ TEST EXITOSO: Bloques de pensamiento procesados correctamente")
+        print("OK: Bloques de pensamiento procesados correctamente")
     else:
-        print("❌ TEST FALLIDO: Problemas procesando bloques de pensamiento")
+        print("FAIL: Problemas procesando bloques de pensamiento")
     
     return success
 
@@ -172,10 +174,10 @@ def test_configuration():
     delims_ok = cleaner.word_delimiters == expected_delimiters
     
     if size_ok and delims_ok:
-        print("✅ TEST EXITOSO: Configuración desde .env funciona")
+        print("OK: EXITOSO: Configuración desde .env funciona")
         success = True
     else:
-        print("❌ TEST FALLIDO: Problemas con configuración desde .env")
+        print("FAIL: FALLIDO: Problemas con configuración desde .env")
         success = False
     
     # Limpiar variables de entorno
@@ -201,7 +203,7 @@ def main():
             result = test_func()
             results.append((test_name, result))
         except Exception as e:
-            print(f"❌ ERROR en {test_name}: {e}")
+            print(f"ERROR en {test_name}: {e}")
             results.append((test_name, False))
     
     # Resumen final
@@ -211,7 +213,7 @@ def main():
     
     passed = 0
     for test_name, success in results:
-        status = "✅ PASÓ" if success else "❌ FALLÓ"
+        status = "OK" if success else "FAIL"
         print(f"{test_name:<25} {status}")
         if success:
             passed += 1
@@ -219,10 +221,10 @@ def main():
     print(f"\nTests pasados: {passed}/{len(results)}")
     
     if passed == len(results):
-        print("🎉 ¡Todos los tests pasaron! El sistema de buffer está funcionando correctamente.")
+        print(" ¡Todos los tests pasaron! El sistema de buffer está funcionando correctamente.")
         return 0
     else:
-        print("⚠️  Algunos tests fallaron. Revisar la implementación.")
+        print("WARN  Algunos tests fallaron. Revisar la implementación.")
         return 1
 
 

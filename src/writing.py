@@ -1,20 +1,89 @@
-from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, BaseChain
+from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, BaseChain, parse_model_string
 from chapter_summary import ChapterSummaryChain, ProgressiveContextManager
 from emergency_prompts import emergency_prompts
 from example_library import ExampleLibrary
 from section_quality_monitor import SectionQualityMonitor
 from time import sleep
 import re
+import random
+import logging
 import time  # Importación añadida para usar time.sleep()
 import os    # Importación añadida para variables de entorno
 
 # FASE 4: Importar configuración centralizada
 from config.defaults import get_config
+from retry_strategy import RetryStrategy, RetryableException
 
 # Obtener configuración
 _config = get_config()
 _context_config = _config.context
 _rate_limit_config = _config.rate_limit
+_summary_config = _config.summary
+
+logger = logging.getLogger(__name__)
+
+def _resolve_provider_name() -> str:
+    model_type = os.environ.get("MODEL_TYPE", "").strip().lower()
+    if model_type:
+        return model_type
+    selected_model = os.environ.get("SELECTED_MODEL", "").strip()
+    if selected_model:
+        provider, _ = parse_model_string(selected_model)
+        if provider:
+            return provider.lower()
+    return "ollama"
+
+
+def _sanitize_snippet(text: str, max_len: int = 120) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) > max_len:
+        return cleaned[:max_len].rstrip() + "..."
+    return cleaned
+
+
+def _build_fallback_section_text(
+    chapter_title: str,
+    idea: str,
+    genre: str,
+    style: str,
+    section_position: str
+) -> str:
+    chapter_hint = _sanitize_snippet(chapter_title, 80) or "el capitulo actual"
+    idea_hint = _sanitize_snippet(idea, 120) or "un giro importante"
+    genre_hint = _sanitize_snippet(genre, 40) or "la historia"
+    style_hint = _sanitize_snippet(style, 40) or "un tono narrativo claro"
+
+    templates = {
+        "inicio": [
+            "Con el inicio de {chapter_hint}, {idea_hint} comienza a tomar forma, marcando el rumbo de {genre_hint}.",
+            "El capitulo abre con {idea_hint}, presentando el conflicto principal y el estilo de {style_hint}."
+        ],
+        "medio": [
+            "La tension crece mientras {idea_hint} se desarrolla en {chapter_hint}, con decisiones que cambian el rumbo.",
+            "En el centro de {chapter_hint}, {idea_hint} empuja a los personajes a actuar y sostener {genre_hint}."
+        ],
+        "final": [
+            "Hacia el cierre de {chapter_hint}, {idea_hint} deja un impacto que prepara el siguiente paso.",
+            "El capitulo concluye con {idea_hint}, reforzando el tono de {style_hint} y abriendo nuevas preguntas."
+        ],
+        "default": [
+            "La historia avanza en {chapter_hint} mientras {idea_hint} redefine las prioridades del grupo.",
+            "En {chapter_hint}, {idea_hint} mantiene el impulso narrativo con {genre_hint} como telon de fondo."
+        ]
+    }
+
+    key = section_position if section_position in templates else "default"
+    seed = hash((chapter_hint, idea_hint, key)) & 0xFFFFFFFF
+    rng = random.Random(seed)
+    template = rng.choice(templates[key])
+    return template.format(
+        chapter_hint=chapter_hint,
+        idea_hint=idea_hint,
+        genre_hint=genre_hint,
+        style_hint=style_hint
+    )
 
 class WriterChain(BaseEventChain):
     # Template zero-shot original
@@ -181,6 +250,10 @@ class WriterChain(BaseEventChain):
 
         except Exception as e:
             print_progress(f"Error generando contenido: {str(e)}")
+            logger.error(
+                "writer chain failed",
+                extra={"operation": "section_generation", "error": str(e)}
+            )
             raise
     
     def _get_formatted_examples(
@@ -245,6 +318,10 @@ Texto generado:
             
         except Exception as e:
             print_progress(f"⚠️ Error obteniendo ejemplos: {str(e)}")
+            logger.warning(
+                "example retrieval failed",
+                extra={"operation": "few_shot_examples", "error": str(e)}
+            )
             return "[Error cargando ejemplos]"
 
 def regenerate_problematic_section(writer_chain, context_manager, section_params, max_attempts=3):
@@ -270,16 +347,26 @@ def regenerate_problematic_section(writer_chain, context_manager, section_params
         response = writer_chain.llm.invoke(emergency_prompt)
         content = clean_think_tags(extract_content_from_llm_response(response))
         
-        if content and len(content.strip()) > 50:
+        if content and len(content.strip()) >= _summary_config.section_min_chars:
             print_progress("✅ Regeneración exitosa usando prompt de emergencia")
             return content
             
     except Exception as e:
         print_progress(f"Error en regeneración con prompt de emergencia: {str(e)}")
+        logger.warning(
+            "section regeneration failed",
+            extra={"operation": "section_regeneration", "error": str(e)}
+        )
     
     # Si todo falla, usar texto de contingencia
     print_progress("⚠️ Usando texto de contingencia tras fallo de regeneración")
-    return f"La escena continuó desarrollándose. Los personajes avanzaron en su objetivo mientras exploraban {chapter_title}."
+    return _build_fallback_section_text(
+        chapter_title=chapter_title,
+        idea=current_idea,
+        genre="",
+        style="",
+        section_position="medio"
+    )
 
 def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_summary, new_section, total_chapters=None):
     """
@@ -292,12 +379,16 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
         # Si no hay resumen previo, crear uno básico
         if not current_summary or current_summary.strip() == "":
             current_summary = f"Inicio del capítulo {chapter_num}: {chapter_title}"
+        safe_new_section = new_section or ""
         
         # Si la nueva sección es muy larga, limitarla para el análisis
-        if len(new_section) > 1500:
-            summary_section = new_section[:750] + "\n\n[...]\n\n" + new_section[-750:]
+        section_limit = _summary_config.savepoint_section_max_chars
+        if len(safe_new_section) > section_limit:
+            head_len = section_limit // 2
+            tail_len = section_limit - head_len
+            summary_section = safe_new_section[:head_len] + "\n\n[...]\n\n" + safe_new_section[-tail_len:]
         else:
-            summary_section = new_section
+            summary_section = safe_new_section
             
         # Prompt directo y simple para generar el resumen
         prompt = f"""
@@ -318,45 +409,56 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
         Resumen actualizado:
         """
         
-        # Usar directamente el LLM para evitar problemas con las clases de resumen
-        # BaseChain ahora maneja los reintentos automáticamente, eliminamos lógica manual
         try:
-            # Invocar directamente al modelo - los reintentos están en BaseChain
-            result = llm.invoke(prompt)
-            # Extraer y limpiar la respuesta
-            text_result = extract_content_from_llm_response(result)
-            updated_summary = clean_think_tags(text_result)
-            
-            # Verificar si el resultado es válido
-            if updated_summary and len(updated_summary) > 20:
-                # Limitar la longitud para evitar resúmenes excesivamente largos
-                if len(updated_summary) > 500:
-                    updated_summary = updated_summary[:500] + "..."
-                return updated_summary
-            else:
-                # Si no hay resultado válido, usar prompt de emergencia
-                emergency_prompt = emergency_prompts.get_summary_emergency_prompt(new_section[:300])
-                emergency_result = llm.invoke(emergency_prompt)
-                return clean_think_tags(extract_content_from_llm_response(emergency_result))
-                    
+            retry_strategy = RetryStrategy()
+
+            def _invoke_summary():
+                result = llm.invoke(prompt)
+                text_result = extract_content_from_llm_response(result)
+                updated = clean_think_tags(text_result)
+                if not updated or len(updated.strip()) < _summary_config.savepoint_summary_min_chars:
+                    raise RetryableException("Resumen vacio o muy corto")
+                return updated
+
+            updated_summary = retry_strategy.execute(_invoke_summary)
+            if len(updated_summary) > _summary_config.savepoint_summary_max_chars:
+                updated_summary = updated_summary[:_summary_config.savepoint_summary_max_chars] + "..."
+            return updated_summary
+
         except Exception as e:
             print_progress(f"Error creando resumen: {str(e)}")
+            logger.error(
+                "savepoint summary failed",
+                extra={"operation": "savepoint_summary", "chapter": chapter_num, "error": str(e)}
+            )
             # Usar prompt de emergencia como fallback
             try:
-                emergency_prompt = emergency_prompts.get_summary_emergency_prompt(new_section[:300])
+                emergency_prompt = emergency_prompts.get_summary_emergency_prompt(
+                    safe_new_section[:_summary_config.savepoint_emergency_section_chars]
+                )
                 emergency_result = llm.invoke(emergency_prompt)
-                return clean_think_tags(extract_content_from_llm_response(emergency_result))
-            except:
+                emergency_summary = clean_think_tags(extract_content_from_llm_response(emergency_result))
+                if emergency_summary and len(emergency_summary.strip()) >= _summary_config.savepoint_summary_min_chars:
+                    if len(emergency_summary) > _summary_config.savepoint_summary_max_chars:
+                        emergency_summary = emergency_summary[:_summary_config.savepoint_summary_max_chars] + "..."
+                    return emergency_summary
+                print_progress("No se pudo generar un nuevo resumen, manteniendo el actual")
+                return current_summary
+            except Exception as emergency_error:
                 # Si todo falla, devolver el resumen actual sin cambios
+                logger.error(
+                    "savepoint emergency summary failed",
+                    extra={"operation": "savepoint_summary", "chapter": chapter_num, "error": str(emergency_error)}
+                )
                 print_progress("No se pudo generar un nuevo resumen, manteniendo el actual")
                 return current_summary
         
-        # Si todos los intentos fallan, devolver el resumen actual sin cambios
-        print_progress("No se pudo generar un nuevo resumen, manteniendo el actual")
-        return current_summary
-        
     except Exception as e:
         print_progress(f"Error creando savepoint: {str(e)}")
+        logger.error(
+            "savepoint summary crashed",
+            extra={"operation": "savepoint_summary", "chapter": chapter_num, "error": str(e)}
+        )
         return current_summary  # En caso de error, devolver el resumen anterior
 
 def write_book(genre, style, profile, title, framework, summaries_dict, idea_dict, chapter_summaries=None):
@@ -375,6 +477,23 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
     # Inicializar WriterChain con configuración few-shot
     writer_chain = WriterChain(use_few_shot=few_shot_config.enabled)
     book = {}
+
+    provider_name = _resolve_provider_name()
+    provider_delay = _rate_limit_config.get_delay(provider_name)
+    logger.info(
+        "rate limit resolved",
+        extra={"operation": "rate_limit", "provider": provider_name, "delay": provider_delay}
+    )
+
+    summary_quality_evaluator = None
+    try:
+        from summary_quality import SummaryQualityEvaluator
+        summary_quality_evaluator = SummaryQualityEvaluator()
+    except Exception as e:
+        logger.warning(
+            "summary quality evaluator not available",
+            extra={"operation": "savepoint_quality", "error": str(e)}
+        )
     
     # Si no hay resúmenes de capítulos, crear un diccionario vacío
     if chapter_summaries is None:
@@ -385,8 +504,16 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
         from dynamic_context import DynamicContextCalculator, ModelContextProfile
         
         # Intentar detectar el modelo desde variables de entorno
-        model_type = os.environ.get("MODEL_TYPE", "ollama")
+        model_type = os.environ.get("MODEL_TYPE", "ollama").strip().lower() or "ollama"
         model_name = "unknown"
+        selected_model = os.environ.get("SELECTED_MODEL", "").strip()
+        if selected_model:
+            parsed_provider, parsed_model = parse_model_string(selected_model)
+            if parsed_provider:
+                model_type = parsed_provider
+            model_name = parsed_model or model_name
+        else:
+            model_name = os.environ.get(f"{model_type.upper()}_MODEL", model_name)
         
         # Crear calculador dinámico
         context_calc = DynamicContextCalculator(model_name, model_type)
@@ -395,17 +522,29 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
         context_manager = ProgressiveContextManager(
             framework=framework,
             llm=writer_chain.llm,  # Pasar LLM para micro-resúmenes
-            enable_micro_summaries=True,  # Activar micro-resúmenes
-            micro_summary_interval=3,     # Cada 3 secciones
-            model_profile=context_calc.profile
+            enable_micro_summaries=_context_config.enable_micro_summaries,
+            micro_summary_interval=_context_config.micro_summary_interval,
+            model_profile=context_calc.profile,
+            context_calculator=context_calc,
+            max_context_size=_context_config.limited_context_size
         )
         
         print_progress("🧠 Sistema de contexto dinámico inicializado")
         
     except Exception as e:
         print_progress(f"⚠️ Error inicializando contexto dinámico: {e}")
+        logger.warning(
+            "dynamic context init failed",
+            extra={"operation": "dynamic_context", "error": str(e)}
+        )
         print_progress("🔄 Usando sistema de contexto tradicional")
-        context_manager = ProgressiveContextManager(framework)
+        context_manager = ProgressiveContextManager(
+            framework=framework,
+            llm=writer_chain.llm,
+            enable_micro_summaries=_context_config.enable_micro_summaries,
+            micro_summary_interval=_context_config.micro_summary_interval,
+            max_context_size=_context_config.limited_context_size
+        )
     
     summary_chain = ChapterSummaryChain()
 
@@ -441,7 +580,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             savepoint_summary = f"Inicio del capítulo {i}: {chapter}"
             
             # Definir intervalo para puntos de guardado (cada cuántas ideas se crea un savepoint)
-            savepoint_interval = max(1, min(3, ideas_total // 3))  # Al menos 3 savepoints por capítulo
+            savepoint_interval = max(1, _context_config.savepoint_interval)
             
             for j, idea in enumerate(idea_list, 1):
                 # Determinar posición en el capítulo
@@ -468,10 +607,25 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                             chapter_num=i,
                             chapter_title=chapter,
                             current_summary=savepoint_summary,
-                            new_section=paragraphs_context[-1500:] if len(paragraphs_context) > 1500 else paragraphs_context,
+                            new_section=paragraphs_context[-_summary_config.savepoint_section_max_chars:]
+                            if len(paragraphs_context) > _summary_config.savepoint_section_max_chars
+                            else paragraphs_context,
                             total_chapters=total_chapters
                         )
                         print_progress("✓ Punto de guardado creado")
+
+                        if summary_quality_evaluator:
+                            try:
+                                quality = summary_quality_evaluator.evaluate_summary(
+                                    paragraphs_context,
+                                    savepoint_summary
+                                )
+                                print_progress(f"📏 Calidad de savepoint: {quality:.2f}")
+                            except Exception as quality_error:
+                                logger.warning(
+                                    "savepoint quality evaluation failed",
+                                    extra={"operation": "savepoint_quality", "error": str(quality_error)}
+                                )
                         
                         # Cada ciertos savepoints (2-3), limpiar el contexto acumulado para evitar sobrecarga
                         if j > savepoint_interval * 2:
@@ -481,6 +635,10 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                             print_progress("🧹 Contexto optimizado para continuar")
                     except Exception as e:
                         print_progress(f"⚠️ Error creando savepoint: {str(e)}")
+                        logger.warning(
+                            "savepoint creation failed",
+                            extra={"operation": "savepoint_summary", "chapter": i, "error": str(e)}
+                        )
                         # Si ocurre un error al crear el savepoint, seguir adelante con el resumen actual
                         # Esto garantiza que un error en el resumen no interrumpa la generación del libro
                 
@@ -509,7 +667,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     section_content = writer_chain.run(**section_params)
                     
                     # Verificar si el contenido es válido
-                    if section_content and len(section_content.strip()) >= 50:
+                    if section_content and len(section_content.strip()) >= _summary_config.section_min_chars:
                         pass  # Contenido válido, continuar
                     else:
                         # Si el contenido no es válido, usar prompt de emergencia
@@ -522,6 +680,15 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                 
                 except Exception as e:
                     print_progress(f"Error en generación: {str(e)}")
+                    logger.error(
+                        "section generation failed",
+                        extra={
+                            "operation": "section_generation",
+                            "chapter": chapter,
+                            "section": j,
+                            "error": str(e)
+                        }
+                    )
                     # Usar prompt de emergencia como fallback
                     emergency_prompt = emergency_prompts.get_writing_emergency_prompt(
                         chapter_title=chapter,
@@ -532,12 +699,32 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                         section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
                     except:
                         # Último recurso: texto de respaldo
-                        section_content = f"La historia continuó desarrollándose en {chapter}. Los personajes avanzaron en su objetivo mientras enfrentaban nuevos desafíos."
+                        logger.warning(
+                            "emergency prompt failed",
+                            extra={
+                                "operation": "section_generation",
+                                "chapter": chapter,
+                                "section": j
+                            }
+                        )
+                        section_content = _build_fallback_section_text(
+                            chapter_title=chapter,
+                            idea=idea,
+                            genre=genre,
+                            style=style,
+                            section_position=section_position
+                        )
                 
                 # Si después de todos los intentos no hay contenido válido, usar texto de respaldo
-                if not section_content or len(section_content.strip()) < 50:
+                if not section_content or len(section_content.strip()) < _summary_config.section_min_chars:
                     print_progress("⚠️ Usando texto de respaldo tras múltiples fallos")
-                    section_content = f"La historia continuó desarrollándose en {chapter}. Los personajes avanzaron en su objetivo mientras enfrentaban nuevos desafíos."
+                    section_content = _build_fallback_section_text(
+                        chapter_title=chapter,
+                        idea=idea,
+                        genre=genre,
+                        style=style,
+                        section_position=section_position
+                    )
                 
                 # NUEVO: Evaluar y potencialmente guardar como ejemplo
                 quality_score = quality_monitor.evaluate_and_store(
@@ -571,7 +758,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                 
                 # FASE 4: Usar rate limiting de configuración
                 # Pequeña pausa entre secciones para evitar problemas con APIs
-                time.sleep(_rate_limit_config.default_delay)
+                time.sleep(provider_delay)
             
             # Al finalizar el capítulo, generar un resumen completo para usar en el siguiente capítulo
             try:
@@ -586,6 +773,10 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                 print_progress(f"✓ Resumen final del capítulo {i} generado")
             except Exception as e:
                 print_progress(f"⚠️ Error generando resumen final: {str(e)}")
+                logger.warning(
+                    "final chapter summary failed",
+                    extra={"operation": "chapter_summary", "chapter": chapter, "error": str(e)}
+                )
                 chapter_summaries[chapter] = savepoint_summary
             
             # NUEVO: Mostrar reporte dinámico al finalizar el capítulo
@@ -616,6 +807,10 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                             print_progress(f"     - Capítulo: {current_limits.get('max_chapter_context', 'N/A')} chars")
             except Exception as e:
                 print_progress(f"⚠️ Error mostrando reporte dinámico: {e}")
+                logger.warning(
+                    "dynamic status report failed",
+                    extra={"operation": "dynamic_context", "error": str(e)}
+                )
             
             print_progress(f"✓ Capítulo {chapter} completado: {len(chapter_content)} secciones")
 
@@ -638,6 +833,10 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
 
     except Exception as e:
         print_progress(f"Error general en la escritura del libro: {str(e)}")
+        logger.error(
+            "write_book failed",
+            extra={"operation": "write_book", "error": str(e)}
+        )
         raise  # Propagar el error para detener la ejecución
 
 def optimize_prompt_for_limited_context(prompt, max_length=None, preserve_instructions=True):

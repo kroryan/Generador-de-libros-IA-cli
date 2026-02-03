@@ -14,6 +14,12 @@ el contexto durante la generación de libros.
 from typing import Dict, List, Optional, Any
 from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response
 import os
+import time
+import logging
+from config.defaults import get_config
+from retry_strategy import RetryStrategy, RetryableException
+
+logger = logging.getLogger(__name__)
 
 
 class ContextMode:
@@ -39,10 +45,11 @@ class UnifiedContextManager:
         framework: str = "",
         llm: Optional[Any] = None,
         mode: str = ContextMode.PROGRESSIVE,
-        max_context_size: int = 2000,
-        enable_micro_summaries: bool = False,
-        micro_summary_interval: int = 3,
-        model_profile: Optional[Any] = None
+        max_context_size: Optional[int] = None,
+        enable_micro_summaries: Optional[bool] = None,
+        micro_summary_interval: Optional[int] = None,
+        model_profile: Optional[Any] = None,
+        context_calculator: Optional[Any] = None
     ):
         """
         Inicializa el gestor de contexto unificado.
@@ -55,38 +62,75 @@ class UnifiedContextManager:
             enable_micro_summaries: Si True, crea micro-resúmenes automáticos cada N secciones
             micro_summary_interval: Número de secciones entre micro-resúmenes
             model_profile: Perfil del modelo para contexto dinámico (NUEVO)
+            context_calculator: Calculador dinámico opcional para actualizar límites
         """
+        config = get_config()
+        self._context_config = config.context
+        self._summary_config = config.summary
+
+        max_context_override = max_context_size
+        if enable_micro_summaries is None:
+            enable_micro_summaries = self._context_config.enable_micro_summaries
+        if micro_summary_interval is None:
+            micro_summary_interval = self._context_config.micro_summary_interval
+        if max_context_size is None:
+            max_context_size = self._context_config.limited_context_size
+
         self.framework = framework
         self.llm = llm
         self.mode = mode
-        self.max_context_size = max_context_size
         self.enable_micro_summaries = enable_micro_summaries
         self.micro_summary_interval = micro_summary_interval
-        self.base_profile = model_profile  # NUEVO: Perfil base del modelo
+        self.base_profile = model_profile or (context_calculator.profile if context_calculator else None)
+        self._context_calculator = context_calculator
         
         # NUEVO: Analizadores dinámicos
+        self.complexity_analyzer = None
+        self.summary_evaluator = None
+        self.dynamic_context_enabled = False
+        dynamic_required = os.environ.get("CONTEXT_REQUIRE_DYNAMIC_ANALYZERS", "false").lower() in ["true", "1", "yes", "on"]
         try:
             from narrative_complexity import NarrativeComplexityAnalyzer
             from summary_quality import SummaryQualityEvaluator
-            
+
             self.complexity_analyzer = NarrativeComplexityAnalyzer()
             self.summary_evaluator = SummaryQualityEvaluator()
             self.dynamic_context_enabled = True
-            
+
             print_progress("🧠 Sistema de contexto dinámico inicializado")
-            
+
         except ImportError as e:
-            print_progress(f"⚠️ Analizadores dinámicos no disponibles: {e}")
-            self.complexity_analyzer = None
-            self.summary_evaluator = None
-            self.dynamic_context_enabled = False
-        
+            msg = f"Analizadores dinámicos no disponibles: {e}"
+            logger.warning(msg, extra={"operation": "dynamic_context", "error": str(e)})
+            if dynamic_required:
+                raise ImportError(msg)
+            print_progress(f"⚠️ {msg}")
+
         # Límites dinámicos (se ajustan en tiempo real)
         self.context_limits = self._calculate_initial_limits()
+        if max_context_override is not None:
+            self.context_limits["max_section_context"] = max_context_override
+            self.max_context_size = max_context_override
+        else:
+            self.max_context_size = max_context_size or self.context_limits.get(
+                "max_section_context", max_context_size
+            )
+
+        if self.enable_micro_summaries and not self.llm:
+            logger.warning(
+                "micro summaries enabled without llm, disabling",
+                extra={"operation": "micro_summary", "reason": "missing_llm"}
+            )
+            self.enable_micro_summaries = False
+
+        self._retry_strategy = RetryStrategy()
+        self._micro_summary_failures = 0
+        self._micro_summary_next_retry_time = 0.0
         
         # Estructuras de datos
         self.book_context = {}
         self.chapter_contexts: Dict[str, Dict[str, Any]] = {}
+        self._chapter_order: List[str] = []
         self.global_entities = {}
         self.current_sections = {}
         
@@ -114,18 +158,20 @@ class UnifiedContextManager:
         self._configure_from_env()
     
     def _calculate_initial_limits(self) -> Dict[str, int]:
-        """Límites iniciales basados en perfil del modelo o variables de entorno"""
-        # Obtener límites desde variables de entorno (configurados por DynamicContextCalculator)
-        section_limit = int(os.environ.get("CONTEXT_LIMITED_SIZE", "2000"))
-        chapter_limit = int(os.environ.get("CONTEXT_STANDARD_SIZE", "8000"))
-        global_limit = int(os.environ.get("CONTEXT_GLOBAL_LIMIT", "1000"))
-        accumulation_limit = int(os.environ.get("CONTEXT_MAX_ACCUMULATION", "6000"))
-        
+        """Límites iniciales basados en perfil del modelo o configuración."""
+        if self.base_profile:
+            return {
+                "max_section_context": self.base_profile.section_limit,
+                "max_chapter_context": self.base_profile.chapter_limit,
+                "max_global_context": self.base_profile.global_limit,
+                "max_accumulation": self.base_profile.accumulation_threshold
+            }
+
         return {
-            "max_section_context": section_limit,
-            "max_chapter_context": chapter_limit,
-            "max_global_context": global_limit,
-            "max_accumulation": accumulation_limit
+            "max_section_context": self._context_config.limited_context_size,
+            "max_chapter_context": self._context_config.standard_context_size,
+            "max_global_context": self._context_config.global_context_size,
+            "max_accumulation": self._context_config.max_context_accumulation
         }
     
     def _configure_from_env(self):
@@ -137,10 +183,13 @@ class UnifiedContextManager:
         max_size_env = os.environ.get('CONTEXT_MAX_SIZE', '')
         if max_size_env.isdigit():
             self.max_context_size = int(max_size_env)
+            self.context_limits["max_section_context"] = self.max_context_size
         
         enable_micro_env = os.environ.get('CONTEXT_ENABLE_MICRO_SUMMARIES', '').lower()
-        if enable_micro_env in ['true', '1', 'yes']:
+        if enable_micro_env in ['true', '1', 'yes', 'on']:
             self.enable_micro_summaries = True
+        elif enable_micro_env in ['false', '0', 'no', 'off']:
+            self.enable_micro_summaries = False
         
         interval_env = os.environ.get('CONTEXT_MICRO_SUMMARY_INTERVAL', '')
         if interval_env.isdigit():
@@ -160,6 +209,9 @@ class UnifiedContextManager:
             "entities": {},
             "section_count": 0
         }
+
+        if chapter_key not in self._chapter_order:
+            self._chapter_order.append(chapter_key)
         
         print_progress(f"📋 Capítulo registrado: {title}")
     
@@ -192,17 +244,31 @@ class UnifiedContextManager:
                 quality_factor = self.summary_evaluator.get_aggressiveness_factor()
             
             # Recalcular límites dinámicos
-            if hasattr(self, 'base_profile') and self.base_profile:
+            if self._context_calculator:
                 try:
-                    from dynamic_context import DynamicContextCalculator
-                    # Usar calculador dinámico para actualizar límites
-                    if hasattr(self, '_context_calculator'):
-                        new_limits = self._context_calculator.calculate_dynamic_limits(
-                            multiplier, quality_factor
+                    new_limits = self._context_calculator.calculate_dynamic_limits(
+                        multiplier, quality_factor
+                    )
+                    mapped_limits = {
+                        "max_section_context": new_limits.get(
+                            "section_limit", self.context_limits.get("max_section_context")
+                        ),
+                        "max_chapter_context": new_limits.get(
+                            "chapter_limit", self.context_limits.get("max_chapter_context")
+                        ),
+                        "max_global_context": new_limits.get(
+                            "global_limit", self.context_limits.get("max_global_context")
+                        ),
+                        "max_accumulation": new_limits.get(
+                            "accumulation_threshold", self.context_limits.get("max_accumulation")
                         )
-                        self.context_limits.update(new_limits)
-                except ImportError:
-                    pass
+                    }
+                    self.context_limits.update(mapped_limits)
+                except Exception as e:
+                    logger.warning(
+                        "dynamic limits update failed",
+                        extra={"operation": "dynamic_context", "error": str(e)}
+                    )
             
             print_progress(f"📊 Sección {section_number}: {complexity['character_count']} personajes, "
                           f"complejidad={multiplier:.1f}x, calidad={quality_factor:.1f}x")
@@ -248,14 +314,23 @@ class UnifiedContextManager:
         
         # Resumen de capítulos anteriores
         previous_chapters = []
-        for i in range(1, chapter_number):
-            for key, ctx in self.chapter_contexts.items():
-                # Buscar capítulos con número menor al actual
-                if str(i) in key:
-                    title = ctx.get("title", f"Capítulo {key}")
-                    summary = ctx.get("summary", "")
-                    if summary:
-                        previous_chapters.append(f"{title}: {summary}")
+        if chapter_key in self._chapter_order:
+            idx = self._chapter_order.index(chapter_key)
+            for prev_key in self._chapter_order[:idx]:
+                ctx = self.chapter_contexts.get(prev_key, {})
+                title = ctx.get("title", f"Capítulo {prev_key}")
+                summary = ctx.get("summary", "")
+                if summary:
+                    previous_chapters.append(f"{title}: {summary}")
+        else:
+            # Fallback heuristico si no se conoce el orden del capitulo
+            for i in range(1, chapter_number):
+                for key, ctx in self.chapter_contexts.items():
+                    if str(i) in key:
+                        title = ctx.get("title", f"Capítulo {key}")
+                        summary = ctx.get("summary", "")
+                        if summary:
+                            previous_chapters.append(f"{title}: {summary}")
         
         # Contenido acumulado del capítulo actual
         current_content = self.chapter_contexts[chapter_key].get("content", [])
@@ -267,8 +342,11 @@ class UnifiedContextManager:
             current_summary = "\n\n".join(paragraphs)
             
             # Limitar longitud del contexto actual
-            if len(current_summary) > self.max_context_size:
-                current_summary = current_summary[-self.max_context_size:]
+            max_section_context = self.context_limits.get(
+                "max_section_context", self.max_context_size
+            )
+            if len(current_summary) > max_section_context:
+                current_summary = current_summary[-max_section_context:]
         
         return {
             "framework": self.framework,
@@ -286,6 +364,10 @@ class UnifiedContextManager:
         """
         if not self.llm or len(self.current_chapter_content) < self.micro_summary_interval:
             return
+
+        now = time.time()
+        if self._micro_summary_next_retry_time and now < self._micro_summary_next_retry_time:
+            return
         
         print_progress("🔄 Creando micro-resumen para optimizar contexto...")
         
@@ -298,7 +380,8 @@ class UnifiedContextManager:
         if self.dynamic_context_enabled and self.summary_evaluator:
             aggressiveness = self.summary_evaluator.get_aggressiveness_factor()
         
-        max_words = int(100 * aggressiveness)  # 60-140 palabras según calidad
+        max_words = int(self._summary_config.micro_summary_base_max_words * aggressiveness)
+        max_words = max(20, max_words)
         
         # Crear prompt para micro-resumen
         prompt = f"""
@@ -311,14 +394,22 @@ class UnifiedContextManager:
         IMPORTANTE: Responde SOLO en español, máximo {max_words} palabras.
         
         Secciones a resumir:
-        {combined_text[:1500]}
+        {combined_text[:self._summary_config.micro_summary_prompt_max_chars]}
         
         Resumen esencial:
         """
         
         try:
-            response = self.llm.invoke(prompt)
-            micro_summary = clean_think_tags(extract_content_from_llm_response(response))
+            def _invoke_micro_summary():
+                response = self.llm.invoke(prompt)
+                summary = clean_think_tags(extract_content_from_llm_response(response))
+                if not summary or len(summary.strip()) < self._summary_config.micro_summary_min_chars:
+                    raise RetryableException("Micro resumen vacio o muy corto")
+                return summary
+
+            micro_summary = self._retry_strategy.execute(_invoke_micro_summary)
+            self._micro_summary_failures = 0
+            self._micro_summary_next_retry_time = 0.0
             
             # NUEVO: Evaluar calidad del resumen
             if self.dynamic_context_enabled and self.summary_evaluator:
@@ -333,7 +424,7 @@ class UnifiedContextManager:
                 print_progress("✓ Micro-resumen creado")
             
             # Reemplazar las secciones resumidas con el micro-resumen
-            if len(micro_summary) > 20:
+            if len(micro_summary) >= self._summary_config.micro_summary_min_chars:
                 # Mantener solo la última sección completa + el micro-resumen
                 self.current_chapter_content = [
                     f"[Resumen de secciones anteriores: {micro_summary}]",
@@ -342,6 +433,15 @@ class UnifiedContextManager:
                 print_progress("✓ Contexto optimizado")
         
         except Exception as e:
+            self._micro_summary_failures += 1
+            cooldown = self._retry_strategy.get_delay(
+                min(self._micro_summary_failures, self._retry_strategy.config.max_attempts - 1)
+            )
+            self._micro_summary_next_retry_time = time.time() + cooldown
+            logger.warning(
+                "micro summary failed",
+                extra={"operation": "micro_summary", "error": str(e), "cooldown": cooldown}
+            )
             print_progress(f"⚠️ Error en micro-resumen: {str(e)}, continuando...")
     
     def finalize_chapter(
@@ -393,11 +493,14 @@ class UnifiedContextManager:
         """Crea un resumen inteligente del capítulo usando IA."""
         
         # Optimizar longitud del contenido si es muy largo
-        if len(chapter_content) > 3000:
-            start = chapter_content[:1000]
+        optimized_limit = self._summary_config.chapter_summary_optimized_max_chars
+        if len(chapter_content) > optimized_limit:
+            start_len = self._summary_config.chapter_summary_optimized_part_chars
+            middle_half = self._summary_config.chapter_summary_optimized_middle_chars
+            start = chapter_content[:start_len]
             middle_pos = len(chapter_content) // 2
-            middle = chapter_content[middle_pos-500:middle_pos+500]
-            end = chapter_content[-1000:]
+            middle = chapter_content[middle_pos - middle_half:middle_pos + middle_half]
+            end = chapter_content[-start_len:]
             
             optimized_content = f"{start}\n\n[...SECCIÓN MEDIA...]\n\n{middle}\n\n[...SECCIÓN FINAL...]\n\n{end}"
         else:
@@ -426,10 +529,10 @@ class UnifiedContextManager:
             summary = clean_think_tags(extract_content_from_llm_response(response))
             
             # Validar y limitar longitud
-            if len(summary) > 500:
-                summary = summary[:500] + "..."
+            if len(summary) > self._summary_config.intelligent_chapter_summary_max_chars:
+                summary = summary[:self._summary_config.intelligent_chapter_summary_max_chars] + "..."
             
-            if len(summary) < 30:
+            if len(summary) < self._summary_config.chapter_summary_min_chars:
                 return self._create_fallback_summary(chapter_title, chapter_number)
             
             print_progress(f"✓ Resumen inteligente del capítulo {chapter_number} creado ({len(summary)} caracteres)")
@@ -437,6 +540,10 @@ class UnifiedContextManager:
         
         except Exception as e:
             print_progress(f"⚠️ Error en resumen inteligente: {str(e)}")
+            logger.warning(
+                "intelligent chapter summary failed",
+                extra={"operation": "chapter_summary", "error": str(e)}
+            )
             return self._create_fallback_summary(chapter_title, chapter_number)
     
     def _create_fallback_summary(self, chapter_title: str, chapter_number: int) -> str:
@@ -490,7 +597,7 @@ class UnifiedContextManager:
         combined = " | ".join(chapter_summaries)
         
         # Si el resumen global es muy largo y hay LLM, condensarlo
-        if len(combined) > 800 and self.llm:
+        if len(combined) > self._summary_config.global_summary_condense_threshold_chars and self.llm:
             self._condense_global_summary(combined)
         else:
             self.book_memory["global_summary"] = combined
@@ -515,11 +622,15 @@ class UnifiedContextManager:
             condensed = clean_think_tags(extract_content_from_llm_response(response))
             
             if len(condensed) > 50:
-                self.book_memory["global_summary"] = condensed[:400]
+                self.book_memory["global_summary"] = condensed[:self._summary_config.global_summary_max_chars]
                 print_progress("✓ Resumen global condensado")
         
         except Exception as e:
             print_progress(f"⚠️ Error condensando resumen global: {str(e)}")
+            logger.warning(
+                "global summary condensation failed",
+                extra={"operation": "global_summary", "error": str(e)}
+            )
     
     def get_context_for_next_chapter(self, next_chapter_number: int) -> Dict[str, Any]:
         """
@@ -540,9 +651,10 @@ class UnifiedContextManager:
         
         # Limitar el contexto total
         total_context = f"{context['global_summary']} {context['previous_chapter']}"
-        if len(total_context) > self.max_context_size:
+        max_context = self.context_limits.get("max_chapter_context", self.max_context_size)
+        if len(total_context) > max_context:
             # Dar prioridad al capítulo anterior sobre el resumen global
-            context["global_summary"] = context["global_summary"][:500] + "..."
+            context["global_summary"] = context["global_summary"][:self._summary_config.global_summary_truncate_chars] + "..."
         
         return context
     
@@ -558,8 +670,8 @@ class UnifiedContextManager:
         context = "\n\n".join(recent_sections)
         
         # Limitar longitud
-        if len(context) > 800:
-            context = context[-800:]
+        if len(context) > self._summary_config.current_chapter_context_max_chars:
+            context = context[-self._summary_config.current_chapter_context_max_chars:]
         
         return context
     
@@ -765,6 +877,7 @@ class UnifiedContextManager:
         # Reiniciar contadores
         self.section_count = 0
         self.current_chapter_content.clear()
+        self._chapter_order.clear()
         
         print_progress("🔄 Análisis dinámico reiniciado para nueva historia")
 

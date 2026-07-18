@@ -29,6 +29,7 @@ class GenerationStatus(Enum):
     WRITING_COMPLETE = "writing_complete"
     SAVING_DOCUMENT = "saving_document"
     COMPLETE = "complete"
+    CANCELLED = "cancelled"
     ERROR = "error"
 
 
@@ -49,7 +50,10 @@ class GenerationState:
     error: Optional[str] = None
     book_ready: bool = False
     file_path: str = ''
+    project_path: str = ''
     output_format: str = 'docx'
+    paused: bool = False
+    cancel_requested: bool = False
     timestamp: datetime = field(default_factory=datetime.now)
     
     def update(self, **kwargs) -> 'GenerationState':
@@ -81,7 +85,10 @@ class GenerationState:
             'error': self.error,
             'book_ready': self.book_ready,
             'file_path': self.file_path,
+            'project_path': self.project_path,
             'output_format': self.output_format
+            , 'paused': self.paused
+            , 'cancel_requested': self.cancel_requested
         }
     
     def can_transition_to(self, new_status: GenerationStatus) -> bool:
@@ -97,6 +104,9 @@ class GenerationState:
         Returns:
             bool: True si la transición es válida
         """
+        if new_status == GenerationStatus.CANCELLED:
+            return self.status not in {GenerationStatus.IDLE, GenerationStatus.COMPLETE, GenerationStatus.ERROR, GenerationStatus.CANCELLED}
+
         valid_transitions = {
             GenerationStatus.IDLE: [
                 GenerationStatus.STARTING
@@ -147,6 +157,9 @@ class GenerationState:
                 GenerationStatus.IDLE
             ],
             GenerationStatus.ERROR: [
+                GenerationStatus.IDLE
+            ],
+            GenerationStatus.CANCELLED: [
                 GenerationStatus.IDLE
             ]
         }
@@ -305,7 +318,10 @@ class GenerationStateManager:
                 error=None,
                 book_ready=False,
                 file_path='',
+                project_path='',
                 output_format='docx'
+                , paused=False
+                , cancel_requested=False
             )
             
             self._state = new_state

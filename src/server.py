@@ -1,543 +1,467 @@
-import sys
+"""Flask and Socket.IO interface for the canonical generation pipeline."""
+
+from __future__ import annotations
+
 import os
-import re
-import requests
-
-# Add the parent directory to the Python path to resolve the 'src' module issue
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
-
-from flask import Flask, render_template, request, jsonify, send_from_directory, url_for
-from flask_socketio import SocketIO
+import json
+from pathlib import Path
+import sys
 import threading
 import time
-# Corregir importaciones para usar las rutas relativas correctas
-from structure import get_structure
-from ideas import get_ideas
-from writing import write_book
-from publishing import DocWriter
-from chapter_summary import ChapterSummaryChain
-from utils import update_model_name, get_available_models
 
-# Configurar correctamente Flask para servir archivos estáticos desde templates
-app = Flask(__name__, 
-            template_folder=os.path.join(parent_dir, 'templates'),
-            static_folder=os.path.join(parent_dir, 'templates'))
+from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request, send_file
+from flask_socketio import SocketIO
 
-# FASE 4: Usar configuración centralizada para SocketIO
+ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(ROOT / ".env")
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 from config.defaults import get_config
+from activity_log import activity_log
+from generation_state import GenerationStatus, LoggingObserver, SocketIOObserver, state_manager
+from generation_control import GenerationCancelled, generation_control
+from guidance import guidance_manager
+from language import normalize_language
+from pipeline import BookGenerationPipeline, BookGenerationRequest
+from provider_manager import ProviderError, provider_manager
+from publishing import SUPPORTED_OUTPUT_FORMATS
+from utils import update_model_name
+
 
 config = get_config()
-socketio_config = config.socketio
-
-# Utilizar el servidor integrado de werkzeug para evitar problemas de monkey patching
+app = Flask(
+    __name__,
+    template_folder=str(ROOT / "templates"),
+    static_folder=str(ROOT / "templates"),
+)
 socketio = SocketIO(
-    app, 
-    cors_allowed_origins=socketio_config.cors_allowed_origins, 
-    async_mode=socketio_config.async_mode.value,
-    ping_interval=socketio_config.ping_interval,
-    ping_timeout=socketio_config.ping_timeout  # CRÍTICO: Cambiado de 72h (259200) a 1h (3600)
+    app,
+    cors_allowed_origins=config.socketio.cors_allowed_origins,
+    async_mode=config.socketio.async_mode.value,
+    ping_interval=config.socketio.ping_interval,
+    ping_timeout=config.socketio.ping_timeout,
 )
+state_manager.add_observer(SocketIOObserver(socketio))
+state_manager.add_observer(LoggingObserver())
 
-# FASE 4: Agregar observers al state_manager (necesita estar después de socketio)
-# Importar después de socketio para evitar importación circular
-from generation_state import SocketIOObserver, LoggingObserver
+_generation_lock = threading.Lock()
+_latest_output: Path | None = None
 
-# Registrar observers
-def _init_state_observers():
-    """Inicializa observers del estado. Debe llamarse después de definir socketio."""
-    from generation_state import state_manager
-    state_manager.add_observer(SocketIOObserver(socketio))
-    state_manager.add_observer(LoggingObserver())
 
-_init_state_observers()
+def _book_records(manifest: dict) -> list[dict]:
+    books = manifest.get("books")
+    if isinstance(books, list) and books:
+        return [{
+            "id": str(item.get("id", "")),
+            "title": str(item.get("title", "Untitled")),
+            "path": str(item.get("path", "")),
+            "chapter_count": len(item.get("chapters", [])),
+            "drafted_count": sum(chapter.get("status") == "drafted" for chapter in item.get("chapters", [])),
+        } for item in books]
+    chapters = manifest.get("chapters", [])
+    return [{
+        "id": "legacy", "title": str(manifest.get("title", "Untitled")), "path": "",
+        "chapter_count": len(chapters),
+        "drafted_count": sum(chapter.get("status") == "drafted" for chapter in chapters),
+    }]
 
-# Función para limpiar códigos de escape ANSI
-def clean_ansi_codes(text):
-    """
-    Limpia códigos de escape ANSI del texto.
-    
-    NOTA: Esta función ahora usa el sistema unificado de limpieza de texto.
-    Mantenida por compatibilidad con código existente.
-    """
-    from text_cleaning import clean_ansi_codes as _clean_ansi_codes
-    return _clean_ansi_codes(text)
 
-# Clase para capturar la salida y enviarla a través de websockets
-class OutputCapture:
-    """
-    Captura output y lo envía vía websockets.
-    
-    NOTA: Ahora usa el sistema unificado de limpieza de streaming.
-    """
-    def __init__(self):
-        from streaming_cleaner import OutputCapture as _OutputCapture
-        self._capture = _OutputCapture(socketio_emit_func=socketio.emit)
-        
-    def write(self, data):
-        self._capture.write(data)
-    
-    def flush(self):
-        self._capture.flush()
-    
-    # Propiedades para compatibilidad
-    @property
-    def in_think_block(self):
-        return self._capture.in_think_block
-    
-    @property
-    def buffer(self):
-        return self._capture.buffer
-    
-    @property
-    def think_buffer(self):
-        return self._capture.think_buffer
-
-# Función para obtener los modelos disponibles en todas las APIs configuradas
-def get_available_models():
-    all_models = []
-    
-    # 1. Detectar modelos de Ollama (siempre escaneados automáticamente)
-    try:
-        ollama_api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434").rstrip("/")
-        response = requests.get(f"{ollama_api_base}/api/tags", timeout=2)
-        if response.status_code == 200:
-            models = response.json().get('models', [])
-            # Convertir los modelos de Ollama en formato estructurado
-            for model in models:
-                all_models.append({
-                    "provider": "ollama",
-                    "name": model['name'],
-                    "display_name": f"Ollama: {model['name']}",
-                    "value": model['name']  # Ollama no necesita prefijo
-                })
-    except Exception as e:
-        print(f"Error al obtener modelos de Ollama: {e}")
-    
-    # 2. Obtener modelos de Groq (desde las variables de entorno)
-    groq_api_key = os.environ.get("GROQ_API_KEY", "")
-    if groq_api_key and groq_api_key.strip():
-        groq_models = os.environ.get("GROQ_AVAILABLE_MODELS", "qwen-qwq-32b,llama3-8b-8192,mixtral-8x7b-32768").split(",")
-        for model in groq_models:
-            model = model.strip()
-            if model:
-                all_models.append({
-                    "provider": "groq",
-                    "name": model,
-                    "display_name": f"Groq: {model}",
-                    "value": f"groq:{model}"
-                })
-    
-    # 3. Obtener modelos de OpenAI (desde las variables de entorno)
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    if openai_api_key and openai_api_key.strip():
-        # Si no hay modelos definidos explícitamente, usar una lista predeterminada
-        openai_models = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo", "gpt-4o"]
-        
-        # Si hay una API base personalizada y no es Groq, intentar obtener la lista real
-        openai_api_base = os.environ.get("OPENAI_API_BASE", "")
-        if openai_api_base and "groq" not in openai_api_base.lower():
-            try:
-                url = f"{openai_api_base}/models"
-                headers = {"Authorization": f"Bearer {openai_api_key}"}
-                response = requests.get(url, headers=headers, timeout=5)
-                
-                if response.status_code == 200:
-                    models_data = response.json().get('data', [])
-                    api_models = [model['id'] for model in models_data if 'id' in model]
-                    if api_models:
-                        openai_models = api_models
-            except Exception as e:
-                print(f"Error al obtener lista de modelos de OpenAI: {e}")
-        
-        # Agregar modelos de OpenAI a la lista
-        for model in openai_models:
-            model = model.strip()
-            if model:
-                all_models.append({
-                    "provider": "openai",
-                    "name": model,
-                    "display_name": f"OpenAI: {model}",
-                    "value": f"openai:{model}"
-                })
-    
-    # 4. Obtener modelos de DeepSeek (desde las variables de entorno)
-    deepseek_api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if deepseek_api_key and deepseek_api_key.strip():
-        deepseek_models = os.environ.get("DEEPSEEK_AVAILABLE_MODELS", "deepseek-chat,deepseek-reasoner").split(",")
-        if not deepseek_models or not deepseek_models[0]:
-            deepseek_models = ["deepseek-chat", "deepseek-reasoner"]
-            
-        for model in deepseek_models:
-            model = model.strip()
-            if model:
-                all_models.append({
-                    "provider": "deepseek",
-                    "name": model,
-                    "display_name": f"DeepSeek: {model}",
-                    "value": f"deepseek:{model}"
-                })
-    
-    # 5. Obtener modelos de Anthropic (desde las variables de entorno)
-    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if anthropic_api_key and anthropic_api_key.strip():
-        anthropic_models = os.environ.get("ANTHROPIC_AVAILABLE_MODELS", "claude-3-opus,claude-3-sonnet,claude-3-haiku").split(",")
-        for model in anthropic_models:
-            model = model.strip()
-            if model:
-                all_models.append({
-                    "provider": "anthropic",
-                    "name": model,
-                    "display_name": f"Anthropic: {model}",
-                    "value": f"anthropic:{model}"
-                })
-    
-    # 6. Buscar proveedores personalizados adicionales
-    for key in os.environ:
-        if key.endswith("_API_KEY") and key not in ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY"]:
-            provider = key.replace("_API_KEY", "").lower()
-            api_key = os.environ.get(key, "")
-            
-            if api_key and api_key.strip():
-                # Obtener los modelos disponibles para este proveedor
-                models_env_var = f"{provider.upper()}_AVAILABLE_MODELS"
-                default_model_env_var = f"{provider.upper()}_MODEL"
-                
-                models = os.environ.get(models_env_var, "").split(",")
-                default_model = os.environ.get(default_model_env_var, "")
-                
-                # Si no hay modelos definidos pero hay un modelo predeterminado, usar ese
-                if (not models or not models[0]) and default_model:
-                    models = [default_model]
-                
-                # Agregar modelos del proveedor personalizado
-                for model in models:
-                    model = model.strip()
-                    if model:
-                        all_models.append({
-                            "provider": provider,
-                            "name": model,
-                            "display_name": f"{provider.capitalize()}: {model}",
-                            "value": f"{provider}:{model}"
-                        })
-    
-    # Si no se encontró ningún modelo, añadir uno predeterminado
-    if not all_models:
-        all_models.append({
-            "provider": "ollama",
-            "name": "llama2",
-            "display_name": "Ollama: llama2 (default)",
-            "value": "llama2"
-        })
-    
-    return all_models
-
-# FASE 4: Reemplazar diccionario global con GenerationStateManager
-from generation_state import (
-    GenerationStateManager,
-    GenerationStatus,
-    SocketIOObserver,
-    LoggingObserver
-)
-
-# Crear gestor de estado con observers
-state_manager = GenerationStateManager()
-# Se agregará el SocketIOObserver después de que socketio esté definido
-
-@app.route('/')
+@app.get("/")
 def index():
-    # Obtener modelos disponibles para pasar a la plantilla
-    models = get_available_models()
-    return render_template('index.html', models=models)
+    return render_template("index.html")
 
-@app.route('/models')
-def get_models():
-    # Endpoint para obtener modelos disponibles mediante AJAX
-    models = get_available_models()
-    return jsonify({"models": models})
 
-@app.route('/health')
-def health_check():
-    """Endpoint de verificación de salud del sistema."""
+@app.get("/favicon.ico")
+def favicon():
+    return "", 204
+
+
+@app.get("/providers")
+def providers():
+    return jsonify({"providers": provider_manager.list_public()})
+
+
+@app.get("/models")
+def models():
+    provider_id = str(request.args.get("provider", "")).strip()
     try:
-        # Verificar conectividad básica con proveedores configurados
-        from provider_registry import ProviderRegistry
-        
-        registry = ProviderRegistry()
-        available_providers = registry.get_available_providers()
-        
-        health_status = {
-            "status": "healthy",
-            "timestamp": time.time(),
-            "providers": {
-                "total": len(available_providers),
-                "configured": len([p for p in available_providers if p.is_configured()]),
-                "active_providers": [p.name for p in available_providers if p.is_configured()]
-            },
-            "system": {
-                "consolidated_context": True,  # Confirmamos que la consolidación está completa
-                "unified_context_manager": True
-            }
-        }
-        
-        return jsonify(health_status), 200
-        
-    except Exception as e:
-        return jsonify({
-            "status": "unhealthy", 
-            "error": str(e),
-            "timestamp": time.time()
-        }), 500
+        if provider_id:
+            discovered = provider_manager.models_for(provider_id)
+        else:
+            discovered = []
+            for provider in provider_manager.list_public():
+                if not provider["available"]:
+                    continue
+                for model in provider_manager.models_for(provider["id"]):
+                    discovered.append({**model, "provider": provider["id"]})
+        selection = os.environ.get("SELECTED_MODEL", "").strip()
+        selected_provider, _, selected_model = selection.partition(":")
+        if selected_provider != provider_id:
+            env_prefix = provider_id.upper().replace("-", "_")
+            selected_model = os.environ.get(f"{env_prefix}_MODEL", "").strip()
+        return jsonify({"models": discovered, "count": len(discovered), "selected_model": selected_model})
+    except ProviderError as error:
+        return jsonify({"error": str(error)}), 400
 
-@app.route('/generate', methods=['POST'])
+
+@app.get("/vaults")
+def vaults():
+    requested_root = str(request.args.get("root", config.generation.output_directory)).strip()
+    root = Path(requested_root).expanduser()
+    if not root.is_absolute():
+        root = ROOT / root
+    root = root.resolve()
+    if not root.exists():
+        return jsonify({"vaults": [], "count": 0, "root": str(root)})
+    discovered = []
+    candidates = [root / ".bookgen" / "manifest.json", *root.glob("*/.bookgen/manifest.json")]
+    for manifest_path in candidates[:200]:
+        if not manifest_path.is_file():
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            vault_root = manifest_path.parent.parent.resolve()
+            chapters = manifest.get("chapters", [])
+            discovered.append({
+                "path": str(vault_root),
+                "title": manifest.get("title") or vault_root.name,
+                "language": manifest.get("language", ""),
+                "chapter_count": len(chapters),
+                "drafted_count": sum(item.get("status") == "drafted" for item in chapters),
+                "updated_at": manifest_path.stat().st_mtime,
+            })
+        except (OSError, TypeError, ValueError):
+            continue
+    discovered.sort(key=lambda item: item["updated_at"], reverse=True)
+    return jsonify({"vaults": discovered, "count": len(discovered), "root": str(root)})
+
+
+@app.get("/vault-books")
+def vault_books():
+    vault_root = Path(str(request.args.get("vault", ""))).expanduser().resolve()
+    manifest_path = vault_root / ".bookgen" / "manifest.json"
+    if not manifest_path.is_file():
+        return jsonify({"error": "Selected vault is not a valid BookGen vault"}), 400
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, json.JSONDecodeError):
+        return jsonify({"error": "Selected vault manifest is invalid"}), 400
+    books = _book_records(manifest)
+    return jsonify({"books": books, "count": len(books)})
+
+
+@app.post("/providers")
+def create_provider():
+    try:
+        provider = provider_manager.create(request.get_json(silent=True) or {})
+        return jsonify({"provider": provider}), 201
+    except ProviderError as error:
+        return jsonify({"error": str(error)}), 400
+
+
+@app.delete("/providers/<provider_id>")
+def delete_provider(provider_id: str):
+    try:
+        provider_manager.delete(provider_id)
+        return jsonify({"deleted": provider_id})
+    except ProviderError as error:
+        return jsonify({"error": str(error)}), 400
+
+
+@app.post("/providers/<provider_id>/test")
+def test_provider(provider_id: str):
+    try:
+        result = provider_manager.test(provider_id)
+        return jsonify(result), 200 if result["ok"] else 503
+    except ProviderError as error:
+        return jsonify({"ok": False, "error": str(error)}), 400
+
+
+@app.get("/status")
+def generation_status():
+    """Dependency-free browser polling endpoint."""
+    return jsonify(state_manager.get_state().to_dict())
+
+
+@app.get("/activity")
+def generation_activity():
+    """Return incremental events produced by the pipeline and provider CLIs."""
+    try:
+        after = max(0, int(request.args.get("after", 0)))
+        limit = int(request.args.get("limit", 250))
+    except (TypeError, ValueError):
+        return jsonify({"error": "after and limit must be integers"}), 400
+    payload = activity_log.snapshot(after=after, limit=limit)
+    payload["running"] = _generation_lock.locked()
+    return jsonify(payload)
+
+
+@app.post("/guidance")
+def add_guidance():
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message", "")).strip()
+    if not message:
+        return jsonify({"error": "Guidance message is required"}), 400
+    if len(message) > 4000:
+        return jsonify({"error": "Guidance message must be 4000 characters or fewer"}), 400
+    item = guidance_manager.add(message)
+    state = guidance_manager.snapshot()
+    activity_log.emit(
+        f"User guidance received: {message}", kind="guidance", source="user"
+    )
+    return jsonify({"guidance": item, **state}), 202
+
+
+@app.post("/generation/pause")
+def pause_generation():
+    if not _generation_lock.locked():
+        return jsonify({"error": "No generation is running"}), 409
+    control = generation_control.pause()
+    state_manager.update_state(paused=True, current_step="Generation paused after the active model call.")
+    activity_log.emit("Pause requested; no new generation step will start.", kind="warning", source="server")
+    return jsonify(control)
+
+
+@app.post("/generation/resume")
+def resume_generation():
+    if not _generation_lock.locked():
+        return jsonify({"error": "No generation is running"}), 409
+    control = generation_control.resume()
+    state_manager.update_state(paused=False, current_step="Generation resumed.")
+    activity_log.emit("Generation resumed.", source="server")
+    return jsonify(control)
+
+
+@app.post("/generation/cancel")
+def cancel_generation():
+    if not _generation_lock.locked():
+        return jsonify({"error": "No generation is running"}), 409
+    control = generation_control.cancel()
+    state_manager.update_state(paused=False, cancel_requested=True, current_step="Cancellation requested...")
+    activity_log.emit("Cancellation requested.", kind="warning", source="server")
+    return jsonify(control)
+
+
+@app.get("/health")
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "timestamp": time.time(),
+        "generation_status": state_manager.get_state().status.value,
+        "pipeline": "obsidian-first",
+        "languages": ["en", "es"],
+        "output_formats": list(SUPPORTED_OUTPUT_FORMATS),
+    })
+
+
+@app.post("/generate")
 def generate():
-    # FASE 4: Usar state_manager en lugar de diccionario global
+    data = request.get_json(silent=True) or {}
+    try:
+        language = normalize_language(data.get("language", config.generation.default_language))
+        output_format = str(data.get("outputFormat", config.generation.default_output_format)).lower()
+        if output_format not in SUPPORTED_OUTPUT_FORMATS:
+            raise ValueError(f"Unsupported output format: {output_format}")
+        subject = str(data.get("subject", "")).strip()
+        profile = str(data.get("profile", "")).strip()
+        if not subject or not profile:
+            raise ValueError("Subject and reader/profile brief are required")
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+
+    output_path = Path(str(data.get("outputPath", config.generation.output_directory))).expanduser()
+    if not output_path.is_absolute():
+        output_path = ROOT / output_path
+    provider_id = str(data.get("provider", "")).strip()
+    model_name = str(data.get("model", "")).strip()
+    if not provider_id or not model_name:
+        return jsonify({"error": "Provider and model are required"}), 400
+    try:
+        provider_manager.get(provider_id)
+    except ProviderError as error:
+        return jsonify({"error": str(error)}), 400
+    model = f"{provider_id}:{model_name}"
+    source_vault_path = str(data.get("sourceVault", "")).strip()
+    source_book_id = str(data.get("sourceBook", "")).strip()
+    vault_mode = str(data.get("vaultMode", "new")).strip().lower()
+    if source_vault_path:
+        source_root = Path(source_vault_path).expanduser().resolve()
+        if not (source_root / ".bookgen" / "manifest.json").is_file():
+            return jsonify({"error": "Selected source vault is not a valid BookGen vault"}), 400
+        if vault_mode not in {"continue", "related", "revise"}:
+            return jsonify({"error": "Invalid source vault mode"}), 400
+        try:
+            source_manifest = json.loads((source_root / ".bookgen" / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, TypeError, json.JSONDecodeError):
+            return jsonify({"error": "Selected source vault manifest is invalid"}), 400
+        valid_book_ids = {item["id"] for item in _book_records(source_manifest)}
+        if source_book_id not in valid_book_ids:
+            return jsonify({"error": "Select a valid book from the source vault"}), 400
+    else:
+        source_root = None
+        vault_mode = "new"
+    generation_request = BookGenerationRequest(
+        subject=subject,
+        profile=profile,
+        style=str(data.get("style", config.generation.default_style)).strip(),
+        genre=str(data.get("genre", config.generation.default_genre)).strip(),
+        language=language,
+        output_format=output_format,
+        output_path=str(output_path.resolve()),
+        agent_tools=bool(data.get("agentTools", config.generation.agent_tools_enabled)),
+        web_search=bool(data.get("webSearch", False)),
+        source_vault_path=str(source_root) if source_root else "",
+        source_book_id=source_book_id if source_root else "",
+        vault_mode=vault_mode,
+    )
+
+    if not _generation_lock.acquire(blocking=False):
+        return jsonify({"error": "A generation is already running"}), 409
     state_manager.reset()
+    generation_control.reset()
+    guidance_manager.start_generation()
+    queued_guidance = guidance_manager.snapshot()["active_count"]
+    activity_log.reset()
+    activity_log.emit(
+        f"Generation accepted with {provider_id}:{model_name}",
+        source="server",
+    )
+    if queued_guidance:
+        activity_log.emit(f"Loaded {queued_guidance} queued user guidance message(s).", kind="guidance", source="user")
     state_manager.update_state(
         status=GenerationStatus.STARTING,
-        current_step='Iniciando generación...',
-        progress=0
+        current_step="Starting generation...",
+        progress=0,
+        output_format=output_format,
     )
-    
-    data = request.json
-    subject = data.get('subject', 'Aventuras en un mundo cyberpunk')
-    profile = data.get('profile', 'Protagonista rebelde en un entorno distópico')
-    style = data.get('style', 'Narrativo-Épico-Imaginativo')
-    genre = data.get('genre', 'Cyberpunk')
-    model = data.get('model', 'llama2')
-    output_format = data.get('outputFormat', 'docx')
-    output_path = data.get('outputPath', './docs')
-    
-    # Normalizar la ruta de salida
-    if not os.path.isabs(output_path):
-        output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), output_path.lstrip('./\\'))
-    
-    # Actualizar el formato de salida en el estado
-    state_manager.update_state(output_format=output_format)
-
-    # Iniciar el proceso en un hilo separado
-    thread = threading.Thread(
-        target=generate_book, 
-        args=(subject, profile, style, genre, model, output_format, output_path)
-    )
-    thread.daemon = True
-    thread.start()
-
-    return jsonify({"status": "Generation started", "outputFormat": output_format})
-
-def generate_book(subject, profile, style, genre, model, output_format, output_path):
-    """
-    Genera el libro completo. FASE 4: Usa GenerationStateManager inmutable.
-    """
-    # Redireccionar la salida estándar para capturarla
-    old_stdout = sys.stdout
-    sys.stdout = OutputCapture()
-    
     try:
-        # FASE 4: Obtener configuración de rate limiting
-        rate_limit_config = config.rate_limit
-        
-        # Paso 1: Configurar el modelo
+        thread = threading.Thread(
+            target=_generate_book,
+            args=(generation_request, model),
+            daemon=True,
+        )
+        thread.start()
+    except Exception:
+        guidance_manager.finish_generation()
+        _generation_lock.release()
+        raise
+    return jsonify({"status": "started", "outputFormat": output_format, "language": language}), 202
+
+
+def _generate_book(generation_request: BookGenerationRequest, model: str) -> None:
+    global _latest_output
+    try:
+        activity_log.emit(f"Configuring model: {model}", source="pipeline")
         state_manager.update_state(
             status=GenerationStatus.CONFIGURING_MODEL,
-            current_step=f'Configurando modelo: {model}',
-            progress=2
+            current_step=f"Configuring model: {model or 'environment default'}",
+            progress=2,
         )
-        time.sleep(rate_limit_config.default_delay)
-        
-        # Actualizar el modelo seleccionado en utils.py
-        print(f"Modelo seleccionado: {model}")
-        update_model_name(model)
-        
-        # Paso 2: Generación de estructura (20%)
+        if model:
+            update_model_name(model)
+            provider = model.split(":", 1)[0] if ":" in model else "ollama"
+            os.environ["MODEL_TYPE"] = provider
         state_manager.update_state(
             status=GenerationStatus.GENERATING_STRUCTURE,
-            current_step='Generando estructura básica...',
-            progress=5
+            current_step="Generating structure...",
+            progress=4,
         )
-        
-        title, framework, chapter_dict = get_structure(subject, genre, style, profile)
-        
+
+        phase = {"ideas": False, "writing": False, "saving": False}
+
+        def progress(message: str, value: int, data: dict) -> None:
+            activity_log.emit(f"[{value}%] {message}", source="pipeline")
+            updates = {"current_step": message, "progress": value}
+            if data.get("title"):
+                updates["title"] = data["title"]
+            if data.get("chapter_count"):
+                updates["chapter_count"] = data["chapter_count"]
+                if data.get("current_chapter"):
+                    updates["current_chapter"] = data["current_chapter"]
+            if data.get("project_path"):
+                updates["project_path"] = data["project_path"]
+
+            if value >= 20 and not phase["ideas"]:
+                state_manager.update_state(status=GenerationStatus.STRUCTURE_COMPLETE, **updates)
+                state_manager.update_state(status=GenerationStatus.GENERATING_IDEAS, **updates)
+                phase["ideas"] = True
+            elif value >= 45 and not phase["writing"]:
+                state_manager.update_state(status=GenerationStatus.IDEAS_COMPLETE, **updates)
+                state_manager.update_state(status=GenerationStatus.WRITING_BOOK, **updates)
+                phase["writing"] = True
+            elif value >= 90 and not phase["saving"]:
+                state_manager.update_state(status=GenerationStatus.WRITING_COMPLETE, **updates)
+                state_manager.update_state(status=GenerationStatus.SAVING_DOCUMENT, **updates)
+                phase["saving"] = True
+            else:
+                state_manager.update_state(**updates)
+
+        result = BookGenerationPipeline(progress).run(generation_request)
+        _latest_output = result.output_path.resolve()
         state_manager.update_state(
-            status=GenerationStatus.STRUCTURE_COMPLETE,
-            title=title,
-            chapter_count=len(chapter_dict),
-            current_step=f'Estructura generada: {title}',
-            progress=20
+            status=GenerationStatus.COMPLETE,
+            title=result.title,
+            current_step=f"Complete. Project: {result.project_path.name}",
+            progress=100,
+            book_ready=True,
+            file_path="download",
+            project_path=str(result.project_path),
         )
-        time.sleep(rate_limit_config.default_delay)
-        
-        # Paso 3: Generación de ideas (40%)
+        activity_log.emit(
+            f"Generation complete. Published {result.output_path.name} inside project {result.project_path.name}",
+            kind="success",
+            source="pipeline",
+        )
+    except GenerationCancelled as error:
+        current = state_manager.get_state()
         state_manager.update_state(
-            status=GenerationStatus.GENERATING_IDEAS,
-            current_step='Generando ideas para cada capítulo...',
-            progress=25
+            status=GenerationStatus.CANCELLED,
+            current_step="Generation cancelled. The project keeps its completed checkpoints.",
+            progress=current.progress,
+            paused=False,
+            cancel_requested=True,
+            error=None,
         )
-        
-        summaries_dict, idea_dict = get_ideas(subject, genre, style, profile, title, framework, chapter_dict)
-        
-        state_manager.update_state(
-            status=GenerationStatus.IDEAS_COMPLETE,
-            current_step=f'Ideas generadas para {len(idea_dict)} capítulos',
-            progress=40
-        )
-        time.sleep(rate_limit_config.default_delay)
-        
-        # Paso 4: Escritura del libro y generación de resúmenes (85%)
-        state_manager.update_state(
-            status=GenerationStatus.WRITING_BOOK,
-            current_step='Escribiendo el libro...',
-            progress=45
-        )
-        
-        # Inicializar el diccionario de resúmenes de capítulos
-        chapter_summaries = {}
-        chapter_summary_chain = ChapterSummaryChain()
-        
-        # Escribir el libro capítulo a capítulo, generando resúmenes a medida que avanzamos
-        book = {}
-        total_chapters = len(idea_dict)
-        progress_per_chapter = 40 / total_chapters  # 40% del progreso total distribuido entre capítulos
-        
-        for i, (chapter, idea_list) in enumerate(idea_dict.items(), 1):
-            state_manager.update_state(
-                status=GenerationStatus.WRITING_BOOK,
-                current_chapter=i,
-                current_step=f'Escribiendo capítulo {i}/{total_chapters}: {chapter}',
-                progress=int(45 + (i-1) * progress_per_chapter)
-            )
-            
-            # Escribir un solo capítulo a la vez
-            chapter_title = summaries_dict[chapter].split('\n')[0] if '\n' in summaries_dict[chapter] else chapter
-            chapter_book = write_book(
-                genre, style, profile, title, framework, 
-                {chapter: summaries_dict[chapter]}, 
-                {chapter: idea_list},
-                chapter_summaries
-            )
-            
-            # Combinar con el libro principal
-            book.update(chapter_book)
-            
-            # Generar resumen para este capítulo completo para usar en los siguientes
-            chapter_content = "\n\n".join(chapter_book[chapter])
-            chapter_summaries[chapter] = chapter_summary_chain.run(
-                title=title,
-                chapter_num=i,
-                chapter_title=chapter_title,
-                chapter_content=chapter_content,
-                total_chapters=total_chapters
-            )
-            
-            state_manager.update_state(
-                status=GenerationStatus.CHAPTER_COMPLETE,
-                current_step=f'Capítulo {i}/{total_chapters} completado',
-                progress=int(45 + i * progress_per_chapter)
-            )
-            
-        state_manager.update_state(
-            status=GenerationStatus.WRITING_COMPLETE,
-            current_step='Contenido del libro generado',
-            progress=85
-        )
-        time.sleep(rate_limit_config.default_delay)
-        
-        # Paso 5: Guardado del documento (100%)
-        state_manager.update_state(
-            status=GenerationStatus.SAVING_DOCUMENT,
-            current_step=f'Guardando documento en formato {output_format.upper()}...',
-            progress=90
-        )
-        
-        doc_writer = DocWriter()
-        file_path = doc_writer.write_doc(
-            book, 
-            chapter_dict, 
-            title, 
-            output_format=output_format, 
-            output_path=output_path
-        )
-        
-        # Verificar que el archivo se guardó correctamente
-        if os.path.exists(file_path):
-            # Generar una URL relativa para la descarga
-            relative_path = os.path.relpath(file_path, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            download_path = relative_path.replace('\\', '/')
-            
-            # Extraer solo el nombre del archivo
-            filename = os.path.basename(file_path)
-            
-            # Generación completada con éxito
-            state_manager.update_state(
-                status=GenerationStatus.COMPLETE,
-                current_step=f'Libro "{title}" completado con éxito y guardado como {filename}',
-                progress=100,
-                book_ready=True,
-                file_path=download_path
-            )
-        else:
-            # Hubo un error al guardar
-            state_manager.update_state(
-                status=GenerationStatus.ERROR,
-                current_step='Error al guardar el libro. Generación completada pero el archivo no se encuentra.',
-                progress=95,
-                error='Archivo no encontrado'
-            )
-        
-    except Exception as e:
-        # Manejar errores
-        error_msg = str(e)
-        current_progress = state_manager.get_state().progress
+        activity_log.emit(str(error), kind="warning", source="pipeline")
+    except Exception as error:
+        current = state_manager.get_state()
         state_manager.update_state(
             status=GenerationStatus.ERROR,
-            current_step=f'Error: {error_msg}',
-            progress=current_progress,
-            error=error_msg
+            current_step=f"Generation failed: {error}",
+            progress=current.progress,
+            error=str(error),
         )
+        activity_log.emit(f"Generation failed: {error}", kind="error", source="pipeline")
     finally:
-        # Restaurar la salida estándar
-        sys.stdout.flush()
-        sys.stdout = old_stdout
+        guidance_manager.finish_generation()
+        _generation_lock.release()
 
-# FASE 4: Función eliminada - usar state_manager.update_state() directamente
-# def update_generation_state(status, step, progress):
-#     Esta función ha sido eliminada. Usar state_manager.update_state() en su lugar.
 
-@app.route('/download/<path:filename>')
-def download(filename):
-    # Determinar el directorio base para la descarga
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # Primero intentar con la ruta exacta proporcionada
-    if os.path.exists(os.path.join(root_dir, filename)):
-        directory = os.path.dirname(os.path.join(root_dir, filename))
-        base_filename = os.path.basename(filename)
-        return send_from_directory(directory, base_filename)
-    
-    # Luego probar con la carpeta docs
-    if os.path.exists(os.path.join(root_dir, 'docs', os.path.basename(filename))):
-        return send_from_directory(os.path.join(root_dir, 'docs'), os.path.basename(filename))
-    
-    # Si ninguna encuentra el archivo
-    return "Archivo no encontrado", 404
+@app.get("/download")
+def download():
+    if not _latest_output or not _latest_output.is_file():
+        return jsonify({"error": "No generated file is available"}), 404
+    return send_file(_latest_output, as_attachment=True, download_name=_latest_output.name)
 
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(os.path.join(app.root_path, '..', 'templates'), 'favicon.ico')
 
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    return send_from_directory(os.path.join(app.root_path, '..', 'templates'), filename)
-
-@socketio.on('connect')
+@socketio.on("connect")
 def handle_connect():
-    # FASE 4: Enviar el estado actual al cliente cuando se conecta
-    socketio.emit('status_update', state_manager.get_state().to_dict())
+    socketio.emit("status_update", state_manager.get_state().to_dict())
 
-if __name__ == '__main__':
-    # Asegurarse de que exista el directorio docs
-    os.makedirs(os.path.join(parent_dir, 'docs'), exist_ok=True)
-    
-    # Iniciar el servidor web
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+
+if __name__ == "__main__":
+    startup_output = Path(config.generation.output_directory).expanduser()
+    if not startup_output.is_absolute():
+        startup_output = ROOT / startup_output
+    startup_output.mkdir(parents=True, exist_ok=True)
+    debug = os.getenv("WEB_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
+    socketio.run(
+        app,
+        host=os.getenv("WEB_HOST", "127.0.0.1"),
+        port=int(os.getenv("WEB_PORT", "5000")),
+        debug=debug,
+        use_reloader=False,
+        allow_unsafe_werkzeug=True,
+    )

@@ -35,7 +35,7 @@ config = ProviderConfig(
 )
 
 print(f"  config.name = '{config.name}'")
-print(f"  config.api_key = '{config.api_key}'")
+print(f"  config.api_key configured = {bool(config.api_key)}")
 print(f"  config.api_base = '{config.api_base}'")
 print(f"  config.model = '{config.model}'")
 

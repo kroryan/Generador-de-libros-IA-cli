@@ -246,7 +246,7 @@ class SummaryConfig:
     global_summary_truncate_chars: int = 500
     current_chapter_context_max_chars: int = 800
 
-    section_min_chars: int = 50
+    section_min_chars: int = 300
 
     @classmethod
     def from_env(cls) -> 'SummaryConfig':
@@ -271,7 +271,7 @@ class SummaryConfig:
             global_summary_max_chars=int(os.getenv('SUMMARY_GLOBAL_MAX_CHARS', '400')),
             global_summary_truncate_chars=int(os.getenv('SUMMARY_GLOBAL_TRUNCATE_CHARS', '500')),
             current_chapter_context_max_chars=int(os.getenv('SUMMARY_CURRENT_CHAPTER_CONTEXT_MAX_CHARS', '800')),
-            section_min_chars=int(os.getenv('SUMMARY_SECTION_MIN_CHARS', '50'))
+            section_min_chars=int(os.getenv('SUMMARY_SECTION_MIN_CHARS', '300'))
         )
 
 
@@ -348,12 +348,14 @@ class GenerationConfig:
     
     Reemplaza defaults hardcodeados en app.py.
     """
-    default_subject: str = "Aventuras en un mundo cyberpunk"
-    default_profile: str = "Protagonista rebelde en un entorno distópico"
-    default_style: str = "Narrativo-Épico-Imaginativo"
+    default_subject: str = "An adventure in a cyberpunk world"
+    default_profile: str = "A rebellious protagonist confronting a dystopian system"
+    default_style: str = "Epic, imaginative, and character-driven"
     default_genre: str = "Cyberpunk"
+    default_language: str = "en"
     default_output_format: str = "docx"
-    output_directory: str = "./docs"
+    output_directory: str = "./books"
+    agent_tools_enabled: bool = True
     
     @classmethod
     def from_env(cls) -> 'GenerationConfig':
@@ -361,28 +363,30 @@ class GenerationConfig:
         return cls(
             default_subject=os.getenv(
                 'GEN_DEFAULT_SUBJECT',
-                'Aventuras en un mundo cyberpunk'
+                'An adventure in a cyberpunk world'
             ),
             default_profile=os.getenv(
                 'GEN_DEFAULT_PROFILE',
-                'Protagonista rebelde en un entorno distópico'
+                'A rebellious protagonist confronting a dystopian system'
             ),
             default_style=os.getenv(
                 'GEN_DEFAULT_STYLE',
-                'Narrativo-Épico-Imaginativo'
+                'Epic, imaginative, and character-driven'
             ),
             default_genre=os.getenv(
                 'GEN_DEFAULT_GENRE',
                 'Cyberpunk'
             ),
+            default_language=os.getenv('GEN_DEFAULT_LANGUAGE', 'en'),
             default_output_format=os.getenv(
                 'GEN_DEFAULT_OUTPUT_FORMAT',
                 'docx'
             ),
             output_directory=os.getenv(
                 'GEN_OUTPUT_DIRECTORY',
-                './docs'
-            )
+                './books'
+            ),
+            agent_tools_enabled=os.getenv('AGENT_TOOLS_ENABLED', 'true').lower() in ('true', '1', 'yes', 'on')
         )
 
 
@@ -520,11 +524,13 @@ class AppConfig:
             errors.append("LLM_MAX_TOKENS debe ser >= 1 o None")
         
         # Validar GenerationConfig
-        valid_formats = ['docx', 'pdf', 'txt', 'html', 'md']
+        valid_formats = ['obsidian', 'docx', 'pdf', 'txt', 'html', 'md']
         if self.generation.default_output_format.lower() not in valid_formats:
             errors.append(
                 f"GEN_DEFAULT_OUTPUT_FORMAT debe ser uno de: {', '.join(valid_formats)}"
             )
+        if self.generation.default_language.lower() not in ('en', 'es'):
+            errors.append("GEN_DEFAULT_LANGUAGE must be either en or es")
         
         # Validar FewShotConfig
         if self.few_shot.quality_threshold < 0 or self.few_shot.quality_threshold > 1:

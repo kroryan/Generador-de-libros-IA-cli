@@ -1,264 +1,252 @@
-![Python Version](https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/Generador-de-libros-IA-cli)
+# CyberNovelist AI
 
-## ✨ Introduction (WORKS ONLY IN SPANISH FOR NOW)
+CyberNovelist AI is an Obsidian-first long-form book generator. It builds a canonical
+book bible and linked planning wiki before drafting prose, saves every chapter and
+continuity summary back into the vault, and publishes reader-facing files from that
+vault. It supports fiction, history, biography, narrative nonfiction, essays, technical
+books, and other long-form genres. English is the default; English and Spanish books are
+fully supported.
 
-This project uses Large Language Models (LLMs) to generate complete fantasy novels with full transparency of the creative process.
+[Documentacion en espanol](README.es.md)
 
-> **⚠️ WARNING**: Early-stage project. Bugs and limitations may exist.
+## Why Obsidian first?
 
----
+The editable vault is the source of truth. DOCX, PDF, Markdown, HTML, and plain-text
+outputs are derived artifacts. This makes the plan inspectable, reduces context waste,
+and prevents later exports from drifting away from the chapter files.
 
-## 🆕 Recent Updates (October 2025)
+The generation sequence is:
 
-* 🌟 **Improved real-time streaming**: Text is now streamed directly without fragmentation or modification.
-* 🎨 **Visual separation of thoughts and responses**: Model thoughts are shown in magenta and responses in cyan.
-* 🛠️ **Simplified logic**: Removal of unnecessary processing to ensure a smoother experience.
-* 🚀 **Web interface optimization**: UI improvements for a more intuitive user experience.
+1. Create an isolated project and generate only the title and foundational framework
+2. Build six substantial canonical bible volumes
+3. Create the Obsidian vault and its structural notes
+4. Extract and expand characters, locations, organizations, objects, concepts, and events
+5. Merge names and aliases into one canonical entity registry and validate every graph link
+6. Plan the chapter outline from the completed bible and wiki
+7. Generate detailed chapter briefs and ordered scene or expository-section plans
+8. Draft chapters with compact savepoints and a tool-using author agent
+9. Persist every chapter and continuity summary immediately
+10. Publish from the validated vault
 
-## 🆕 Recent Updates (May 2025)
+## Vault layout
 
-* 💾 **Savepoints system**: Robust implementation that prevents context loss during long text generation
-* 🧠 **Improved context management**: Automatic context optimization to maintain coherence in long stories
-* 💻 **Enhanced command mode**: You can now select models directly with `--model` and list available ones with `--list-models`
-* 📝 **Inter-chapter summary system** to improve narrative coherence
-* 🔄 **Improved narrative flow** with enriched context for continuity between sections
-* 📊 **Professional document formatting** with optimized metadata, margins, and styles
-* 📑 **Improved text organization** with semantic paragraph processing
-* 🧠 **Multi-API model detection system**: Automatically detects models available in Ollama, OpenAI, DeepSeek, Groq, and custom providers
-* 🔧 **Flexible configuration via `.env` file**: Fully customize all providers and models without touching the code
-* 🎨 **Improved thought visualization**: Model thoughts are now displayed correctly in yellow and turn blue when finished
-* 🖥️ **Fully redesigned cyberpunk web interface**
+```text
+books/<timestamp>-<premise>/
+├── 00 - Start/                 portal, master index, wiki index, project control
+├── 01 - Story Core/            bible portal and six canonical volumes
+├── 02 - Story and Continuity/  events and story architecture
+├── 03 - Manuscript/Books/
+│   └── Book - <title>/         chapter index, plans, chapters, scenes, summaries
+├── 04 - Characters/
+├── 05 - World/
+├── 06 - Organizations/
+├── 07 - Objects and Concepts/
+├── 08 - Continuity/
+├── 09 - Research/
+├── 10 - Writing and Revision/
+├── 11 - Book Context Wiki/     compressed prior-book references, never full manuscripts
+├── 90 - Templates/
+├── 99 - Archive/
+├── Exports/
+└── .bookgen/
+    ├── manifest.json, project.json, link-repairs.json
+    ├── checkpoints/
+    └── agent-traces/
+```
 
----
+The model supplies canonical entity data, but application code creates wikilinks only
+after registering real notes. Before each export, missing links are converted back to
+plain visible text, resolvable links are normalized, and the graph is validated again.
 
-## 🚀 Key Features
+## Installation
 
-* 🧠 Multi-API support (Ollama, OpenAI, DeepSeek, Groq, Anthropic)
-* 📖 Full generation of narrative structures and characters
-* 💾 Savepoints system to prevent context loss
-* 🔄 Automatic recovery from model failures
-* 📝 Summary system for narrative coherence
-* 🎨 Cyberpunk interface with real-time visualization
-* 📤 PDF/DOCX export with professional formatting
-* ⚙️ Flexible configuration via `.env` file
-* 🔍 Transparent process with model thoughts
-
----
-
-## 🖥️ Interactive Demo
-
-![Generator Interface](images/sample.png)
-
----
-
-## ⚙️ Quick Setup
+Python 3.11 is recommended.
 
 ```bash
 git clone https://github.com/kroryan/Generador-de-libros-IA-cli.git
 cd Generador-de-libros-IA-cli
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Web mode (graphical interface)
-python src/app.py --web  
-
-# Console mode (recommended for better performance)
-python src/app.py
+cp .env.example .env
 ```
 
-For web mode, visit `http://localhost:5000` in your browser.
+Configure at least one provider in `.env`. Ollama can run without an API key when its
+local server is available.
 
----
+## CLI
 
-## 🐳 Docker Usage
+Generate an English DOCX with the configured default model:
 
-You can run the application inside a Docker container for easier deployment.
-
-1. Build the image (from the project root):
-
-```powershell
-docker build -t generador-libros:latest .
+```bash
+python src/app.py --language en --output-format docx
 ```
 
-2. Run the container (mounting a `.env` file at the project root and the `docs` volume for outputs):
+Generate a Spanish Obsidian vault archive with a selected model:
 
-```powershell
-docker run --rm -p 5000:5000 -v ${PWD}\.env:/app/.env:ro -v ${PWD}\docs:/app/docs generador-libros:latest
+```bash
+python src/app.py \
+  --model ollama:gpt-oss:20b-cloud \
+  --language es \
+  --output-format obsidian \
+  --subject "Una expedicion descubre una ciudad fuera del tiempo" \
+  --profile "Fantasia adulta, misterio causal y final cerrado"
 ```
 
-3. Use docker-compose (recommended for development):
+Useful options:
 
-```powershell
+```text
+--web
+--list-models
+--model PROVIDER:MODEL
+--language {en,es}
+--output-format {obsidian,md,txt,html,docx,pdf}
+--output-path DIRECTORY
+--subject TEXT
+--profile TEXT
+--style TEXT
+--genre TEXT
+--source-vault DIRECTORY
+--source-book BOOK_ID
+--vault-mode {new,continue,related,revise}
+--web-search
+--no-agent-tools
+```
+
+PDF publication requires `libreoffice` or `soffice` in `PATH`.
+
+## Web interface
+
+```bash
+python src/app.py --web
+```
+
+Open `http://localhost:5000`. The UI defaults to English and includes an explicit book
+language selector for English and Spanish. Changing it also localizes the premise/profile
+examples, styles, genres, controls, and status text. Only one generation runs at a time.
+
+The provider and model selectors are independent. The provider manager can add, test, and
+remove OpenAI-compatible or native Anthropic API endpoints. API keys are stored locally in
+`.bookgen/providers.json` with `0600` permissions and are never returned to the browser.
+Ollama models are discovered from `/api/tags`; embedding-only models are excluded and native
+tool support is shown next to the model.
+
+The source-vault selector discovers BookGen vaults under the output directory. With no
+selection, generation creates a new independent vault. A selected vault can provide canon
+for a continuation, a related second book, or a revision. All three create a separate
+project, so an existing manuscript is never overwritten implicitly. Pause/resume and cancel
+controls appear under the Generate button while work is active; cancellation retains every
+completed checkpoint.
+
+When a source book is selected, the new vault keeps the two kinds of book data separate.
+Complete editable manuscripts stay under `03 - Manuscript/Books/Book - <title>/`. A derived
+reference is written under `11 - Book Context Wiki/Book - <source title>/` with its own
+portal, compressed dossier, manuscript map, and provenance. Planning reserves context for
+this dossier, and the agent can search it like any other vault note; the full source
+manuscript is not duplicated into the wiki.
+
+The progress panel also accepts live instructions while a project is being built or edited.
+Instructions are injected into subsequent model and agent calls and persisted in
+`.bookgen/guidance.jsonl`. A nearby checkbox enables bounded DuckDuckGo web search for the
+author agent. Web access is off by default, except that selecting `History` in the UI checks
+it automatically; the user can still turn it off. Search results are source leads with URLs,
+not proof by themselves, so consequential historical claims must be corroborated.
+
+Genre policy is explicit. `History` uses factual chronology, provenance, competing
+interpretations, and verification requirements. `Historical fiction` may research its real
+setting but retains freedom to invent characters, scenes, dialogue, and deliberate departures
+without turning the manuscript into documentary exposition.
+
+Two subscription-backed adapters are detected automatically:
+
+- [`Codex CLI (ChatGPT subscription)`](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan): run `codex login` and choose ChatGPT sign-in.
+- [`Claude Code (Pro/Max subscription)`](https://docs.anthropic.com/en/docs/claude-code/getting-started): run `claude`, then `/login` and select the Claude subscription.
+
+They invoke the vendors' official non-interactive CLIs and never extract OAuth credentials.
+CLI calls are intentionally tool-restricted; the author agent uses its own audited vault
+tools through ReAct. API subscriptions/billing remain separate from consumer subscriptions.
+
+## Docker
+
+```bash
 docker compose up --build
 ```
 
-Notes:
+The service listens on port `5000`, reads `.env` as a mounted file, and writes vaults and
+published output inside its isolated project under `books/`.
 
-* Do not include your keys/API keys inside the image. Use a `.env` file at the root and mount it as a volume (already configured in `docker-compose.yml`).
-* The service exposes port `5000` by default.
-* Output files will be written to the `docs/` folder on your host thanks to the volume.
+## Project workspace
 
----
+Every generation creates one project directory before the first model call. The directory
+itself is an Obsidian vault and contains all durable work for that book:
 
-## 💻 Command Line Usage
-
-The program offers a powerful command-line interface with explicit model selection:
-
-### 📋 Available Options
-
-* **List available models**:
-
-  ```bash
-  python src/app.py --list-models
-  ```
-
-* **Generate a book with a specific model**:
-
-  ```bash
-  python src/app.py --model groq:llama3-8b-8192
-  ```
-
-* **Start the web interface with a preselected model**:
-
-  ```bash
-  python src/app.py --web 
-  ```
-
-### 🔧 Interaction with the `.env` file
-
-* If you do not specify a model with `--model`, the program will use the `MODEL_TYPE` value from the `.env` file
-
-* You can configure your `.env` file to set a default model:
-
-  ```env
-  MODEL_TYPE=groq
-  GROQ_MODEL=llama3-8b-8192
-  GROQ_API_KEY=your_api_key
-  ```
-
-* Model selection priority:
-
-  1. Model specified with `--model`
-  2. `MODEL_TYPE` value in `.env`
-  3. Fallback to other configured providers
-
----
-
-## 🧠 Savepoints System
-
-The generator now includes a robust savepoints system that:
-
-* 💾 **Creates periodic summaries** during content generation
-* 🔄 **Maintains narrative coherence** even in very long texts
-* 🛡️ **Prevents context loss** commonly occurring in LLMs
-* 🚀 **Allows full book generation** without interruptions due to context limits
-* 🔍 **Automatically optimizes context** to avoid model overload
-
-This system works by creating strategic savepoints during writing, especially after long sections, allowing the model to effectively "remember" what happened before without having to keep all the text in context.
-
----
-
-## 🛠️ Prompt Guide
-
-### 🔍 Prompt Locations
-
-| File                 | Class                 | Purpose             |
-| -------------------- | --------------------- | ------------------- |
-| `structure.py`       | `TitleChain`          | Book title          |
-| `structure.py`       | `FrameworkChain`      | Narrative framework |
-| `structure.py`       | `ChaptersChain`       | Chapter structure   |
-| `ideas.py`           | `IdeasChain`          | Idea development    |
-| `writing.py`         | `WriterChain`         | Narrative writing   |
-| `chapter_summary.py` | `ChapterSummaryChain` | Chapter summaries   |
-
-### 📝 Prompt Customization
-
-1. Edit the corresponding file
-2. Look for `PROMPT_TEMPLATE`
-3. Modify it while keeping the `{variables}` placeholders
-
-**Example for poetic style** (`writing.py`):
-
-```python
-PROMPT_TEMPLATE = """
-You are a fantasy poet and writer in English.
-Use metaphorical language and vivid descriptions.
-...
-"""
+```text
+books/<timestamp>-<premise>/
+  Project Dashboard.md
+  Work/                 original request only
+  00 - Start/ ... 99 - Archive/   canonical Obsidian vault
+  Exports/              DOCX, PDF, Markdown, HTML, TXT, or vault ZIP
+  .bookgen/              manifests, hidden checkpoints, graph repairs, and agent traces
 ```
 
----
+Each model result is checkpointed immediately under `.bookgen/checkpoints/`. Bible text
+exists once in its six canonical volume notes; portals and indices link to it rather than
+copying it. A later provider or server failure therefore does not discard completed work.
+Codex and Claude Code are launched with this project as their working directory.
 
-## 🌐 Supported Providers
+## Context strategy
 
-| Provider       | Example Models            | Requirements      |
-| -------------- | ------------------------- | ----------------- |
-| Ollama (Local) | llama3, mistral, phi3     | Ollama Server     |
-| OpenAI         | GPT-4, GPT-3.5            | API Key           |
-| Groq           | Llama3, Mixtral-8x7b      | API Key           |
-| DeepSeek       | DeepSeek-Chat             | API Key           |
-| Anthropic      | Claude-3                  | API Key + library |
-| Custom         | Any OpenAI-compatible API | `.env` config     |
+The full bible remains available in the vault. Each prose request receives a compact,
+relevance-ranked bible excerpt, the current chapter brief or savepoint, the previous
+chapter continuity state, the current scene or section objective, and only recent prose. This preserves
+canonical facts without repeatedly spending the entire context window.
 
----
+For continuation and revision, source compression is adaptive and hierarchical. Markdown
+volumes and chapter boundaries are packed into bounded maps, oversized sections receive a
+small overlap, every source section is covered, and a final synthesis reconciles the maps.
+The complete selected source remains in a hidden checkpoint and is retrievable on demand by
+the author agent, so compression is not the only access path.
 
-## ⚙️ Full `.env` Configuration
+Editable vaults use `.bookgen/context-index.json` as an incremental cache. Each relevant
+Markdown file has a content hash, provenance, and reusable summary. Normal edits only
+re-index changed/new files and patch the canonical dossier; deleted files are removed. A
+full rebuild occurs only when the cache is absent or a large share of the vault changed.
 
-```env
-# Default model configuration
-MODEL_TYPE=ollama
-SELECTED_MODEL=ollama:llama3
+Before and after each chapter, the model runs as a bounded author agent with a real
+observe-and-act loop. It can search and read the vault, inspect backlinks and summaries,
+validate the graph, maintain agent notes, and append verified continuity or entity updates.
+When enabled, it can also search DuckDuckGo and retains source URLs in its audited trace.
+Ollama uses native `/api/chat` tool calls; compatible hosted/local wrappers use native
+`bind_tools`; other models use a ReAct fallback over the same real tools. Every write passes
+through graph repair and validation, and traces are stored in `.bookgen/agent-traces`.
+Use `--no-agent-tools` when minimizing model calls matters more than autonomous retrieval.
+Revision mode additionally exposes read-only source-manuscript retrieval plus guarded
+canonical note creation/editing with exact-match patches, backups, a revision ledger, and
+graph validation. The same guarded canonical tools can incorporate necessary live guidance
+during new-world construction without granting unrestricted filesystem writes.
 
-# Ollama (local)
-OLLAMA_MODEL=llama3
-OLLAMA_API_BASE=http://localhost:11434
+Configuration options and provider variables are documented in [`.env.example`](.env.example).
 
-# OpenAI
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4
-OPENAI_API_BASE=  # Optional, for compatible APIs
+## Tests
 
-# Groq
-GROQ_API_KEY=your_key_here
-GROQ_MODEL=llama3-8b-8192
-GROQ_API_BASE=https://api.groq.com/openai/v1
-
-# DeepSeek
-DEEPSEEK_API_KEY=your_key_here
-DEEPSEEK_MODEL=deepseek-chat
-DEEPSEEK_API_BASE=https://api.deepseek.com
-
-# Anthropic
-ANTHROPIC_API_KEY=your_key_here
-ANTHROPIC_MODEL=claude-3-opus
-
-# Custom providers (OpenAI-compatible)
-CUSTOM_API_KEY=your_key_here
-CUSTOM_API_BASE=https://your-custom-api.com/v1
-CUSTOM_MODEL=your-custom-model
+```bash
+python -m pytest -q
 ```
 
----
+The graph/storage tests can also run directly:
 
-## 🚧 Generation Process
+```bash
+python tests/test_obsidian_pipeline.py
+```
 
-1. **Structure (20%)**: Title and narrative framework
-2. **Ideas (40%)**: Chapter and plot development
-3. **Writing (85%)**: Detailed narrative with savepoint management
-4. **Publishing (100%)**: PDF/DOCX export with professional formatting
+## Supported providers
 
----
+- Ollama with live model/capability discovery
+- OpenAI and OpenAI-compatible APIs
+- Native Anthropic Messages API
+- Groq and DeepSeek through their OpenAI-compatible endpoints
+- Codex CLI authenticated with ChatGPT
+- Claude Code authenticated with Claude Pro/Max
+- Web-created custom providers and providers declared through environment variables
 
-## 🚧 Future Development
-
-* ✅ Savepoints system
-* ✅ Advanced parameter support
-* ✅ Integration with more providers
-* ⏳ Image generation for scene illustration
-* ⏳ Advanced personality tuning
-* ⏳ Persistent memory implementation
-
----
-
-## 📱 Contact
-
-If for any reason you want to contact me, you can do so by joining this [Discord](https://discord.gg/TTmrXaeXM8) — my name on the server is Allen.
+Never commit API keys. Keep secrets in `.env` or the ignored `.bookgen/providers.json`.

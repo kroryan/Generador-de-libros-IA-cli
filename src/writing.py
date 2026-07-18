@@ -13,6 +13,8 @@ import os    # Importación añadida para variables de entorno
 # FASE 4: Importar configuración centralizada
 from config.defaults import get_config
 from retry_strategy import RetryStrategy, RetryableException
+from language import language_instruction, normalize_language
+from generation_control import GenerationCancelled, generation_control
 
 # Obtener configuración
 _config = get_config()
@@ -43,19 +45,51 @@ def _sanitize_snippet(text: str, max_len: int = 120) -> str:
     return cleaned
 
 
+def _select_bible_context(book_bible: str, chapter_title: str, current_idea: str) -> str:
+    """Select relevant bible sections instead of spending context on the entire vault note."""
+    if not book_bible:
+        return ""
+    limit = max(_context_config.global_context_size, 800)
+    sections = re.split(r"(?m)(?=^##\s+)", book_bible)
+    terms = {
+        word.casefold()
+        for word in re.findall(r"\b[\w'-]{4,}\b", f"{chapter_title} {current_idea}")
+    }
+    ranked = []
+    for index, section in enumerate(sections):
+        folded = section.casefold()
+        score = sum(1 for term in terms if term in folded)
+        if "creative north star" in folded or "continuity ledger" in folded:
+            score += 2
+        ranked.append((score, -index, section.strip()))
+    selected = []
+    used = 0
+    for _, _, section in sorted(ranked, reverse=True):
+        if not section:
+            continue
+        remaining = limit - used
+        if remaining <= 0:
+            break
+        selected.append(section[:remaining])
+        used += min(len(section), remaining)
+    return "\n\n".join(selected)
+
+
 def _build_fallback_section_text(
     chapter_title: str,
     idea: str,
     genre: str,
     style: str,
-    section_position: str
+    section_position: str,
+    language: str = "en",
 ) -> str:
-    chapter_hint = _sanitize_snippet(chapter_title, 80) or "el capitulo actual"
-    idea_hint = _sanitize_snippet(idea, 120) or "un giro importante"
-    genre_hint = _sanitize_snippet(genre, 40) or "la historia"
-    style_hint = _sanitize_snippet(style, 40) or "un tono narrativo claro"
+    language = normalize_language(language)
+    chapter_hint = _sanitize_snippet(chapter_title, 80) or ("el capitulo actual" if language == "es" else "the current chapter")
+    idea_hint = _sanitize_snippet(idea, 120) or ("un giro importante" if language == "es" else "an important turn")
+    genre_hint = _sanitize_snippet(genre, 40) or ("la historia" if language == "es" else "the story")
+    style_hint = _sanitize_snippet(style, 40) or ("un tono narrativo claro" if language == "es" else "a clear narrative tone")
 
-    templates = {
+    templates_es = {
         "inicio": [
             "Con el inicio de {chapter_hint}, {idea_hint} comienza a tomar forma, marcando el rumbo de {genre_hint}.",
             "El capitulo abre con {idea_hint}, presentando el conflicto principal y el estilo de {style_hint}."
@@ -73,6 +107,25 @@ def _build_fallback_section_text(
             "En {chapter_hint}, {idea_hint} mantiene el impulso narrativo con {genre_hint} como telon de fondo."
         ]
     }
+    templates_en = {
+        "inicio": [
+            "As {chapter_hint} opens, {idea_hint} begins to take shape and sets the direction of {genre_hint}.",
+            "The chapter opens with {idea_hint}, establishing its conflict in {style_hint}.",
+        ],
+        "medio": [
+            "Tension rises as {idea_hint} develops in {chapter_hint}, forcing decisions that alter the course ahead.",
+            "At the center of {chapter_hint}, {idea_hint} pushes the characters to act and sustains {genre_hint}.",
+        ],
+        "final": [
+            "Near the close of {chapter_hint}, {idea_hint} leaves consequences that prepare the next movement.",
+            "The chapter closes with {idea_hint}, reinforcing {style_hint} while opening a consequential question.",
+        ],
+        "default": [
+            "The story advances in {chapter_hint} as {idea_hint} changes the group's priorities.",
+            "In {chapter_hint}, {idea_hint} maintains narrative momentum against the backdrop of {genre_hint}.",
+        ],
+    }
+    templates = templates_es if language == "es" else templates_en
 
     key = section_position if section_position in templates else "default"
     seed = hash((chapter_hint, idea_hint, key)) & 0xFFFFFFFF
@@ -88,100 +141,96 @@ def _build_fallback_section_text(
 class WriterChain(BaseEventChain):
     # Template zero-shot original
     ZERO_SHOT_TEMPLATE = """
-    Eres un escritor profesional de {genre} en español.
+    You are a professional long-form author working in {genre}.
+    {language_instruction}
     
-    ### INFORMACIÓN ESENCIAL:
-    - Título: "{title}"
-    - Estilo: {style}
-    - Capítulo actual: {chapter_title} (Capítulo {current_chapter} de {total_chapters})
-    - Posición: {section_position} del capítulo
+    ### CANONICAL BOOK BIBLE:
+    {book_bible}
+
+    ### ESSENTIAL INFORMATION:
+    - Title: "{title}"
+    - Style: {style}
+    - Current chapter: {chapter_title} ({current_chapter} of {total_chapters})
+    - Position: {section_position}
     
-    ### CONTEXTO RESUMIDO:
+    ### COMPACT CONTEXT:
     {summary}
+
+    ### AUTHOR AGENT VAULT AND SOURCE RESEARCH:
+    {agent_context}
     
-    ### PÁRRAFOS RECIENTES:
+    ### RECENT PROSE:
     {previous_paragraphs}
     
-    ### IDEA A DESARROLLAR AHORA:
+    ### SECTION OBJECTIVE TO WRITE NOW:
     {current_idea}
     
-    <think>
-    Desarrollaré esta idea enfocándome solo en:
-    1. Conexión directa con el contenido reciente
-    2. Desarrollo coherente de personajes y situaciones
-    3. Avance natural de la historia
-    
-    Mantendré el foco narrativo sin divagar ni resumir.
-    </think>
-    
-    IMPORTANTE: 
-    - Escribe EXCLUSIVAMENTE texto narrativo en español
-    - NO incluyas notas, comentarios ni explicaciones
-    - Solo genera el texto que formaría parte del libro final
-    
-    Escribe directamente el contenido narrativo:"""
+    Genre rule: History/Historia is factual historiography and requires verified, qualified
+    claims. Historical fiction/Ficcion historica may invent story material while keeping
+    relevant real-world context credible. Continue directly from the recent prose. For fiction, preserve canon, point of view,
+    tense, motivations, and unresolved threads, and dramatize rather than summarize. For
+    nonfiction, write clear, accurate, evidence-aware prose that advances the section's claim,
+    chronology, explanation, or instruction; distinguish uncertainty and never invent facts,
+    quotations, citations, or sources. Return only polished book prose without meta-commentary.
+
+    Book prose:"""
 
     # Nuevo template few-shot con ejemplos
     FEW_SHOT_TEMPLATE = """
-    Eres un escritor profesional de {genre} en español.
+    You are a professional long-form author working in {genre}.
+    {language_instruction}
     
-    ### INFORMACIÓN ESENCIAL:
-    - Título: "{title}"
-    - Estilo: {style}
-    - Capítulo actual: {chapter_title} (Capítulo {current_chapter} de {total_chapters})
-    - Posición: {section_position} del capítulo
+    ### CANONICAL BOOK BIBLE:
+    {book_bible}
+
+    ### ESSENTIAL INFORMATION:
+    - Title: "{title}"
+    - Style: {style}
+    - Current chapter: {chapter_title} ({current_chapter} of {total_chapters})
+    - Position: {section_position}
     
-    ### EJEMPLOS DE REFERENCIA:
+    ### REFERENCE EXAMPLES:
     
-    A continuación se muestran ejemplos de secciones bien escritas en este género/estilo:
+    Use these only as quality and technique references. Do not copy their facts or wording:
     
     {examples}
     
-    ### CONTEXTO RESUMIDO:
+    ### COMPACT CONTEXT:
     {summary}
+
+    ### AUTHOR AGENT VAULT AND SOURCE RESEARCH:
+    {agent_context}
     
-    ### PÁRRAFOS RECIENTES:
+    ### RECENT PROSE:
     {previous_paragraphs}
     
-    ### IDEA A DESARROLLAR AHORA:
+    ### SECTION OBJECTIVE TO WRITE NOW:
     {current_idea}
     
-    <think>
-    Analizaré los ejemplos para capturar:
-    1. Tono y ritmo narrativo característico del género
-    2. Nivel de detalle descriptivo apropiado
-    3. Balance entre acción, diálogo y descripción
-    4. Técnicas de transición entre escenas
-    
-    Luego desarrollaré la idea actual manteniendo:
-    - Conexión directa con el contenido reciente
-    - Desarrollo coherente de personajes y situaciones
-    - Avance natural de la historia
-    - Calidad similar a los ejemplos mostrados
-    </think>
-    
-    IMPORTANTE: 
-    - Escribe EXCLUSIVAMENTE texto narrativo en español
-    - Mantén el nivel de calidad de los ejemplos mostrados
-    - NO incluyas notas, comentarios ni explicaciones
-    - Solo genera el texto que formaría parte del libro final
-    
-    Escribe directamente el contenido narrativo:"""
+    Genre rule: History/Historia is factual historiography and requires verified, qualified
+    claims. Historical fiction/Ficcion historica may invent story material while keeping
+    relevant real-world context credible. Continue directly from the recent prose. For fiction, preserve canon, point of view,
+    tense, motivations, and unresolved threads, and dramatize rather than summarize. For
+    nonfiction, write clear, accurate, evidence-aware prose that advances the section's claim,
+    chronology, explanation, or instruction; distinguish uncertainty and never invent facts,
+    quotations, citations, or sources. Return only polished book prose without meta-commentary.
+
+    Book prose:"""
     
     def __init__(self, use_few_shot: bool = True):
         """
         Args:
             use_few_shot: Si True, usa prompts con ejemplos. Si False, usa zero-shot.
         """
-        super().__init__()
-        
-        # NUEVO: Configurar few-shot learning
         self.use_few_shot = use_few_shot
         if self.use_few_shot:
-            self.example_library = ExampleLibrary()
             self.PROMPT_TEMPLATE = self.FEW_SHOT_TEMPLATE
         else:
             self.PROMPT_TEMPLATE = self.ZERO_SHOT_TEMPLATE
+        # BaseChain compiles PROMPT_TEMPLATE, so the selected template must exist first.
+        super().__init__()
+        if self.use_few_shot:
+            self.example_library = ExampleLibrary()
 
     def run(
         self,
@@ -198,7 +247,10 @@ class WriterChain(BaseEventChain):
         section_position,
         section_number,
         total_sections,
-        chapter_key
+        chapter_key,
+        language="en",
+        book_bible="",
+        agent_context="",
     ):
         print_progress(f"Escribiendo sección {section_number}/{total_sections} del capítulo {current_chapter}")
         
@@ -219,7 +271,8 @@ class WriterChain(BaseEventChain):
                 examples_text = self._get_formatted_examples(
                     genre=genre,
                     style=style,
-                    section_position=section_position
+                    section_position=section_position,
+                    language=language,
                 )
             
             # Invocar con o sin ejemplos según configuración
@@ -236,6 +289,9 @@ class WriterChain(BaseEventChain):
                 'section_position': section_position,
                 'section_number': section_number,
                 'total_sections': total_sections
+                , 'language_instruction': language_instruction(language)
+                , 'book_bible': clean_think_tags(_select_bible_context(book_bible, chapter_title, current_idea))
+                , 'agent_context': clean_think_tags(agent_context)[-_context_config.standard_context_size:]
             }
             
             # Solo añadir ejemplos si estamos usando few-shot
@@ -243,6 +299,8 @@ class WriterChain(BaseEventChain):
                 invoke_params['examples'] = examples_text
             
             result = self.invoke(**invoke_params)
+            if self._looks_like_assistant_chatter(result):
+                raise ValueError("The model returned assistant chatter instead of book prose")
             
             # El resultado ya viene limpio por el invoke() de BaseChain
             print_progress(f"Sección completada: {len(result)} caracteres")
@@ -255,12 +313,26 @@ class WriterChain(BaseEventChain):
                 extra={"operation": "section_generation", "error": str(e)}
             )
             raise
+
+    @staticmethod
+    def _looks_like_assistant_chatter(text: str) -> bool:
+        normalized = re.sub(r"\s+", " ", str(text)).strip().casefold()
+        markers = (
+            "how can i assist you",
+            "how can i help you",
+            "your message might have been empty",
+            "your message didn’t come through",
+            "your message didn't come through",
+            "feel free to let me know",
+        )
+        return len(normalized) < 500 and any(marker in normalized for marker in markers)
     
     def _get_formatted_examples(
         self, 
         genre: str, 
         style: str, 
-        section_position: str
+        section_position: str,
+        language: str = "en",
     ) -> str:
         """
         Recupera y formatea ejemplos relevantes para el prompt.
@@ -282,7 +354,8 @@ class WriterChain(BaseEventChain):
                 genre=genre,
                 style=style,
                 section_type=section_position,
-                max_examples=max_examples
+                max_examples=max_examples,
+                language=language,
             )
             
             if not examples:
@@ -290,7 +363,8 @@ class WriterChain(BaseEventChain):
                 examples = self.example_library.get_examples(
                     genre=genre,
                     style=style,
-                    max_examples=max_examples
+                    max_examples=max_examples,
+                    language=language,
                 )
             
             if not examples:
@@ -368,7 +442,7 @@ def regenerate_problematic_section(writer_chain, context_manager, section_params
         section_position="medio"
     )
 
-def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_summary, new_section, total_chapters=None):
+def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_summary, new_section, total_chapters=None, language="en"):
     """
     Sistema simplificado y autónomo para crear resúmenes incrementales como puntos de guardado.
     No depende de ChapterSummaryChain, evitando así los errores de parámetros faltantes.
@@ -392,21 +466,21 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
             
         # Prompt directo y simple para generar el resumen
         prompt = f"""
-        Actualiza el resumen existente para incorporar solo los elementos esenciales 
-        de la nueva sección. Mantén el resumen muy breve y centrado solo en lo crucial.
-        
-        IMPORTANTE: Máximo 150 palabras, solo en español.
-        
-        Título: {clean_think_tags(title)}
-        Capítulo: {clean_think_tags(chapter_title)} (Capítulo {chapter_num})
-        
-        Resumen actual:
+        Update the existing continuity summary with only the essential changes from the
+        new section. Keep concrete facts, decisions, revelations, relationship changes,
+        unresolved threads, and the final state. Maximum 150 words.
+        {language_instruction(language)}
+
+        Title: {clean_think_tags(title)}
+        Chapter: {clean_think_tags(chapter_title)} ({chapter_num})
+
+        Current summary:
         {clean_think_tags(current_summary)}
-        
-        Nueva sección:
+
+        New section:
         {clean_think_tags(summary_section)}
-        
-        Resumen actualizado:
+
+        Updated continuity summary:
         """
         
         try:
@@ -461,8 +535,13 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
         )
         return current_summary  # En caso de error, devolver el resumen anterior
 
-def write_book(genre, style, profile, title, framework, summaries_dict, idea_dict, chapter_summaries=None):
+def write_book(
+    genre, style, profile, title, framework, summaries_dict, idea_dict,
+    chapter_summaries=None, language="en", book_bible="", on_chapter_complete=None,
+    vault_project=None, agent_tools=True, web_search=False,
+):
     print_progress("Iniciando escritura del libro...")
+    language = normalize_language(language)
     
     # NUEVO: Usar configuración centralizada para few-shot learning
     config = _config
@@ -527,6 +606,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             model_profile=context_calc.profile,
             context_calculator=context_calc,
             max_context_size=_context_config.limited_context_size
+            , language=language
         )
         
         print_progress("🧠 Sistema de contexto dinámico inicializado")
@@ -544,9 +624,21 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             enable_micro_summaries=_context_config.enable_micro_summaries,
             micro_summary_interval=_context_config.micro_summary_interval,
             max_context_size=_context_config.limited_context_size
+            , language=language
         )
     
     summary_chain = ChapterSummaryChain()
+    novelist_agent = None
+    if agent_tools and vault_project is not None:
+        try:
+            from novelist_agent import NovelistAgent
+            novelist_agent = NovelistAgent(
+                vault_project, writer_chain.llm, language=language,
+                web_search_enabled=web_search, genre=genre,
+            )
+            print_progress(f"Author agent tools enabled (web search: {'on' if web_search else 'off'})")
+        except Exception as error:
+            logger.warning("novelist agent unavailable", extra={"operation": "agent_init", "error": str(error)})
 
     try:
         total_chapters = len(idea_dict)
@@ -557,6 +649,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
         
         # Procesar capítulos en el orden establecido
         for i, chapter in enumerate(ordered_chapters, 1):
+            generation_control.checkpoint()
             idea_list = idea_dict[chapter]
             
             print_progress(f"======================================")
@@ -569,6 +662,16 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             
             # Obtener resumen del capítulo
             chapter_summary = summaries_dict.get(chapter, "")
+            agent_context = ""
+            if novelist_agent:
+                try:
+                    print_progress(f"Agent researching vault context for {chapter}...")
+                    agent_context = novelist_agent.research_chapter(chapter, chapter_summary, idea_list)
+                except Exception as error:
+                    logger.warning(
+                        "novelist agent research failed",
+                        extra={"operation": "agent_research", "chapter": chapter, "error": str(error)},
+                    )
             
             # Registrar el capítulo en el gestor de contexto
             context_manager.register_chapter(chapter, chapter, chapter_summary)
@@ -583,6 +686,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
             savepoint_interval = max(1, _context_config.savepoint_interval)
             
             for j, idea in enumerate(idea_list, 1):
+                generation_control.checkpoint()
                 # Determinar posición en el capítulo
                 section_position = "medio"
                 if j == 1:
@@ -611,6 +715,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                             if len(paragraphs_context) > _summary_config.savepoint_section_max_chars
                             else paragraphs_context,
                             total_chapters=total_chapters
+                            , language=language
                         )
                         print_progress("✓ Punto de guardado creado")
 
@@ -659,6 +764,9 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     'section_number': j,
                     'total_sections': ideas_total,
                     'chapter_key': chapter
+                    , 'language': language
+                    , 'book_bible': book_bible
+                    , 'agent_context': agent_context
                 }
                 
                 # Usar un sistema simplificado sin reintentos manuales
@@ -673,11 +781,16 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                         # Si el contenido no es válido, usar prompt de emergencia
                         emergency_prompt = emergency_prompts.get_writing_emergency_prompt(
                             chapter_title=chapter,
-                            idea=idea[:100]
+                            idea=idea[:100],
+                            language=language,
                         )
                         raw_response = writer_chain.llm.invoke(emergency_prompt)
                         section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
+                        if writer_chain._looks_like_assistant_chatter(section_content):
+                            section_content = ""
                 
+                except GenerationCancelled:
+                    raise
                 except Exception as e:
                     print_progress(f"Error en generación: {str(e)}")
                     logger.error(
@@ -692,13 +805,17 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     # Usar prompt de emergencia como fallback
                     emergency_prompt = emergency_prompts.get_writing_emergency_prompt(
                         chapter_title=chapter,
-                        idea=idea[:100]
+                        idea=idea[:100],
+                        language=language,
                     )
                     try:
                         raw_response = writer_chain.llm.invoke(emergency_prompt)
                         section_content = clean_think_tags(extract_content_from_llm_response(raw_response))
-                    except:
-                        # Último recurso: texto de respaldo
+                        if writer_chain._looks_like_assistant_chatter(section_content):
+                            section_content = ""
+                    except GenerationCancelled:
+                        raise
+                    except Exception:
                         logger.warning(
                             "emergency prompt failed",
                             extra={
@@ -707,23 +824,13 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                                 "section": j
                             }
                         )
-                        section_content = _build_fallback_section_text(
-                            chapter_title=chapter,
-                            idea=idea,
-                            genre=genre,
-                            style=style,
-                            section_position=section_position
-                        )
+                        section_content = ""
                 
-                # Si después de todos los intentos no hay contenido válido, usar texto de respaldo
+                # Never contaminate a manuscript with generic filler after provider failure.
                 if not section_content or len(section_content.strip()) < _summary_config.section_min_chars:
-                    print_progress("⚠️ Usando texto de respaldo tras múltiples fallos")
-                    section_content = _build_fallback_section_text(
-                        chapter_title=chapter,
-                        idea=idea,
-                        genre=genre,
-                        style=style,
-                        section_position=section_position
+                    raise RuntimeError(
+                        f"No valid book prose was produced for {chapter}, section {j}; "
+                        "the project checkpoint was preserved"
                     )
                 
                 # NUEVO: Evaluar y potencialmente guardar como ejemplo
@@ -734,7 +841,8 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     section_position=section_position,
                     context=paragraphs_context[-200:] if paragraphs_context else "",
                     idea=idea,
-                    book_title=title
+                    book_title=title,
+                    language=language,
                 )
                 
                 if quality_score:
@@ -769,6 +877,7 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     chapter_title=chapter,
                     chapter_content=chapter_complete_text,
                     total_chapters=total_chapters
+                    , language=language
                 )
                 print_progress(f"✓ Resumen final del capítulo {i} generado")
             except Exception as e:
@@ -778,6 +887,18 @@ def write_book(genre, style, profile, title, framework, summaries_dict, idea_dic
                     extra={"operation": "chapter_summary", "chapter": chapter, "error": str(e)}
                 )
                 chapter_summaries[chapter] = savepoint_summary
+
+            if on_chapter_complete:
+                on_chapter_complete(chapter, list(chapter_content), chapter_summaries[chapter])
+                if novelist_agent:
+                    try:
+                        print_progress(f"Agent reviewing persisted chapter {chapter}...")
+                        novelist_agent.review_chapter(chapter, chapter_summaries[chapter])
+                    except Exception as error:
+                        logger.warning(
+                            "novelist agent post-draft review failed",
+                            extra={"operation": "agent_review", "chapter": chapter, "error": str(error)},
+                        )
             
             # NUEVO: Mostrar reporte dinámico al finalizar el capítulo
             try:

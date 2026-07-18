@@ -1,6 +1,7 @@
 import re
 import string
 from collections import Counter
+from language import normalize_language
 
 class EntityExtractor:
     """
@@ -9,7 +10,8 @@ class EntityExtractor:
     actualmente activas en cada escena.
     """
     
-    def __init__(self):
+    def __init__(self, language="en"):
+        self.language = normalize_language(language)
         self.known_entities = {
             "characters": set(),  # Personajes conocidos
             "locations": set(),   # Lugares
@@ -27,7 +29,9 @@ class EntityExtractor:
         self.common_words = {
             "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", 
             "a", "ante", "bajo", "con", "contra", "de", "desde", "en", "entre",
-            "hacia", "hasta", "para", "por", "según", "sin", "sobre", "tras"
+            "hacia", "hasta", "para", "por", "según", "sin", "sobre", "tras",
+            "the", "a", "an", "and", "or", "at", "by", "for", "from", "in", "into",
+            "of", "on", "to", "with", "without", "after", "before", "through"
         }
     
     def extract_entities_from_text(self, text, chapter_num=None, is_new_character=False):
@@ -118,6 +122,9 @@ class EntityExtractor:
             r'([A-Z][a-zá-úñ]+) preguntó', r'([A-Z][a-zá-úñ]+) exclamó',
             r'([A-Z][a-zá-úñ]+) pensó', r'respondió ([A-Z][a-zá-úñ]+)',
             r'preguntó ([A-Z][a-zá-úñ]+)', r'miró a ([A-Z][a-zá-úñ]+)',
+            r'([A-Z][a-z]+) said', r'([A-Z][a-z]+) replied', r'([A-Z][a-z]+) asked',
+            r'([A-Z][a-z]+) thought', r'([A-Z][a-z]+) shouted', r'([A-Z][a-z]+) whispered',
+            r'(?:said|asked|replied) ([A-Z][a-z]+)',
         ]
         
         for pattern in character_indicators:
@@ -150,7 +157,9 @@ class EntityExtractor:
             r'de ([A-Z][a-zá-úñ]+)', r'desde ([A-Z][a-zá-úñ]+)',
             r'hacia ([A-Z][a-zá-úñ]+)', r'El ([A-Z][a-zá-úñ]+)',
             r'La ([A-Z][a-zá-úñ]+)', r'el ([A-Z][a-zá-úñ]+) donde',
-            r'la ([A-Z][a-zá-úñ]+) donde'
+            r'la ([A-Z][a-zá-úñ]+) donde',
+            r'in ([A-Z][a-z]+)', r'at ([A-Z][a-z]+)', r'from ([A-Z][a-z]+)',
+            r'toward ([A-Z][a-z]+)', r'inside ([A-Z][a-z]+)'
         ]
         
         for pattern in location_indicators:
@@ -179,7 +188,9 @@ class EntityExtractor:
             r'una ([a-zá-úñ]+) única', r'el legendario ([a-zá-úñ]+)',
             r'la legendaria ([a-zá-úñ]+)', r'el antiguo ([a-zá-úñ]+)',
             r'la antigua ([a-zá-úñ]+)', r'el poderoso ([a-zá-úñ]+)',
-            r'la poderosa ([a-zá-úñ]+)'
+            r'la poderosa ([a-zá-úñ]+)',
+            r'the magical ([a-z]+)', r'the ancient ([a-z]+)', r'the legendary ([a-z]+)',
+            r'a unique ([a-z]+)', r'the powerful ([a-z]+)'
         ]
         
         for pattern in object_patterns:
@@ -210,7 +221,9 @@ class EntityExtractor:
         abstract_concepts = [
             "magia", "poder", "destino", "tiempo", "espacio", "energía",
             "sabiduría", "conocimiento", "eternidad", "oscuridad", "luz",
-            "alma", "espíritu", "vida", "muerte", "guerra", "paz", "verdad"
+            "alma", "espíritu", "vida", "muerte", "guerra", "paz", "verdad",
+            "magic", "power", "fate", "time", "space", "energy", "wisdom", "knowledge",
+            "eternity", "darkness", "light", "soul", "spirit", "life", "death", "war", "peace", "truth"
         ]
         
         # Buscar conceptos abstractos comunes

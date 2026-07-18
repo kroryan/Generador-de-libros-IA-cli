@@ -14,7 +14,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 from streaming_cleaner import StreamingCleaner, OutputCapture
 
 
-class TestBuffer:
+class OutputBuffer:
     """Clase para capturar y analizar el output de streaming."""
     
     def __init__(self):
@@ -44,7 +44,7 @@ def test_word_fragmentation():
     print("Simulando tokens fragmentados de LLM...\n")
     
     # Crear el buffer de prueba
-    test_buffer = TestBuffer()
+    test_buffer = OutputBuffer()
     cleaner = StreamingCleaner(
         on_normal_output=test_buffer.on_normal_output,
         on_think_output=test_buffer.on_think_output,
@@ -113,7 +113,7 @@ def test_think_blocks():
     """Test para verificar que los bloques de pensamiento funcionan con buffer."""
     print("\n=== TEST: Bloques de Pensamiento con Buffer ===")
     
-    test_buffer = TestBuffer()
+    test_buffer = OutputBuffer()
     cleaner = StreamingCleaner(
         on_normal_output=test_buffer.on_normal_output,
         on_think_output=test_buffer.on_think_output,
@@ -157,7 +157,7 @@ def test_configuration():
     os.environ['STREAMING_WORD_BUFFER_SIZE'] = '100'
     os.environ['STREAMING_WORD_DELIMITERS'] = ' .!?'
     
-    test_buffer = TestBuffer()
+    test_buffer = OutputBuffer()
     cleaner = StreamingCleaner(
         on_normal_output=test_buffer.on_normal_output,
         buffer_threshold=50

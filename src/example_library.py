@@ -18,6 +18,7 @@ class ExampleSection:
     quality_score: float    # 0.0-1.0 (calculado automáticamente)
     created_at: str         # Timestamp
     book_title: str         # Título del libro de origen
+    language: str = "es"    # ISO language code; legacy examples were generated in Spanish
     
 class ExampleLibrary:
     """
@@ -192,7 +193,8 @@ Sarah sintió esa familiar sensación de hormigueo en la nuca. En sus quince añ
         genre: str, 
         style: str, 
         section_type: Optional[str] = None,
-        max_examples: int = 2
+        max_examples: int = 2,
+        language: str = "es",
     ) -> List[ExampleSection]:
         """
         Recupera ejemplos relevantes para el género/estilo/tipo.
@@ -225,7 +227,9 @@ Sarah sintió esa familiar sensación de hormigueo en la nuca. En sus quince añ
                     candidates = examples_list[:max_examples]
                     break
         
-        # Filtrar por tipo de sección si se especifica
+        candidates = [example for example in candidates if example.language == language]
+
+        # Filter by section type when possible.
         if section_type and candidates:
             filtered = [ex for ex in candidates if ex.section_type == section_type]
             if filtered:  # Solo usar filtrados si hay resultados

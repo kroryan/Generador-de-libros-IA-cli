@@ -61,7 +61,7 @@ def debug_provider_discovery():
     
     print(f"\n📦 Configuración creada:")
     print(f"  name: {config.name}")
-    print(f"  api_key: '{config.api_key}'")
+    print(f"  api_key configured: {bool(config.api_key)}")
     print(f"  api_base: '{config.api_base}'")
     print(f"  model: '{config.model}'")
     

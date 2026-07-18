@@ -7,14 +7,16 @@ import sys
 import time
 import re
 import os
-import json
 import requests
+
+from activity_log import activity_log
+from generation_control import generation_control
+from guidance import guidance_manager
 
 # Importar nuevos módulos de infraestructura
 from retry_strategy import RetryStrategy, with_retry
 from circuit_breaker import CircuitBreaker, CircuitBreakerRegistry, with_circuit_breaker
 from emergency_prompts import emergency_prompts
-from provider_chain import provider_chain
 from logging_config import get_logger, print_progress
 from model_profiles import model_profile_manager, detect_model_size as new_detect_model_size
 
@@ -26,25 +28,6 @@ YELLOW = "\033[93m"
 WHITE = "\033[97m"
 PURPLE = "\033[95m"
 RESET = "\033[0m"
-
-# Configuración de modelo seleccionado
-SELECTED_MODEL = os.environ.get("SELECTED_MODEL", "")
-
-# Carga los proveedores disponibles desde el archivo .env
-def load_providers_config():
-    try:
-        providers_json = os.environ.get("AVAILABLE_PROVIDERS", "{}")
-        return json.loads(providers_json)
-    except json.JSONDecodeError:
-        print("\n> Error al cargar la configuración de proveedores del archivo .env. Usando valores predeterminados.")
-        return {
-            "ollama": ["llama2"],
-            "openai": ["gpt-3.5-turbo", "gpt-4"],
-            "deepseek": ["deepseek-chat", "deepseek-reasoner"]
-        }
-
-# Proveedores disponibles desde el archivo .env
-AVAILABLE_PROVIDERS = load_providers_config()
 
 # Función para obtener la configuración de un proveedor específico
 def get_provider_config(provider_name):
@@ -68,7 +51,7 @@ def get_provider_config(provider_name):
             default_model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
         elif provider == "OLLAMA":
             api_base = os.environ.get("OLLAMA_API_BASE", "http://localhost:11434")
-            default_model = os.environ.get("OLLAMA_MODEL", "llama2")
+            default_model = os.environ.get("OLLAMA_MODEL", "")
         elif provider == "ANTHROPIC":
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
             api_base = os.environ.get("ANTHROPIC_API_BASE", "https://api.anthropic.com/v1")
@@ -81,51 +64,39 @@ def get_provider_config(provider_name):
     }
 
 def get_available_models():
-    """
-    Detecta automáticamente todos los modelos disponibles en todas las APIs configuradas.
-    Devuelve una lista de diccionarios con información sobre cada modelo.
-    """
+    """Discover usable generation models through the runtime provider manager."""
+    from provider_manager import provider_manager
+
     models = []
-    
-    # Recorrer todos los proveedores configurados en AVAILABLE_PROVIDERS
-    for provider, provider_models in AVAILABLE_PROVIDERS.items():
-        # Obtener la configuración del proveedor
-        config = get_provider_config(provider)
-        
-        # Si hay modelos definidos para este proveedor
-        if provider_models and isinstance(provider_models, list):
-            for model in provider_models:
-                models.append({
-                    "provider": provider,
-                    "name": model,
-                    "display_name": f"{provider.capitalize()}: {model}",
-                    "value": f"{provider}:{model}"  # Formato: "proveedor:modelo"
-                })
-    
-    # Si no se encontró ningún modelo, añadir uno predeterminado
-    if not models:
-        models.append({
-            "provider": "ollama",
-            "name": "llama2",
-            "display_name": "Ollama: llama2 (default)",
-            "value": "ollama:llama2"
-        })
-    
+    selected = os.environ.get("SELECTED_MODEL", "").strip()
+    for provider in provider_manager.list_public():
+        if not provider["available"]:
+            continue
+        try:
+            provider_models = provider_manager.models_for(provider["id"])
+        except ValueError:
+            continue
+        for model in provider_models:
+            value = f"{provider['id']}:{model['name']}"
+            models.append({
+                "provider": provider["id"],
+                "name": model["name"],
+                "display_name": f"{provider['name']}: {model['display_name']}",
+                "value": value,
+                "capabilities": model.get("capabilities", []),
+                "native_tools": model.get("native_tools", False),
+                "selected": value == selected,
+            })
+    if selected:
+        models.sort(key=lambda item: not item["selected"])
     return models
 
 # Función para consultar Ollama si está disponible
 def get_ollama_models():
     """Obtiene la lista de modelos disponibles en Ollama"""
-    try:
-        config = get_provider_config("ollama")
-        api_base = config["api_base"].rstrip("/")
-        response = requests.get(f"{api_base}/api/tags", timeout=2)
-        if response.status_code == 200:
-            models = response.json().get('models', [])
-            return sorted([model['name'] for model in models])
-        return []
-    except Exception:
-        return []
+    from provider_manager import provider_manager
+
+    return sorted(item["name"] for item in provider_manager.models_for("ollama"))
 
 def check_ollama_available():
     """Verifica si Ollama está disponible y funcionando"""
@@ -142,20 +113,16 @@ def parse_model_string(model_string):
     Parsea una cadena de modelo en formato 'provider:model_name' para obtener el proveedor y el nombre del modelo.
     Si no hay prefijo de proveedor, asume que es Ollama.
     """
-    # Proveedores conocidos que usan el prefijo provider:model
-    known_providers = ["openai", "deepseek", "groq", "anthropic", "ollama"]
-    
     if ":" in model_string:
         parts = model_string.split(":", 1)
-        if parts[0].lower() in known_providers:
-            # Es un proveedor conocido como openai:gpt-4 u ollama:gemma3:latest
+        try:
+            from provider_manager import provider_manager
+
+            provider_manager.get(parts[0].lower())
             return parts[0].lower(), parts[1]
-        else:
-            # Es un modelo de Ollama con ":" en su nombre como hf.co/.../model:Q8_0
+        except ValueError:
             return "ollama", model_string
-    else:
-        # Sin prefijo, asumimos que es Ollama
-        return "ollama", model_string
+    return "ollama", model_string
 
 def update_model_name(model_string):
     """
@@ -268,13 +235,24 @@ def get_llm_model(callbacks=None):
         common_params["callbacks"] = callbacks
     
     try:
-        # Usar la nueva cadena de proveedores
-        client = provider_chain.get_client(**common_params)
-        logger.info("Cliente LLM creado exitosamente")
+        from provider_manager import provider_manager
+
+        selection = os.environ.get("SELECTED_MODEL", "").strip()
+        available = get_available_models()
+        if not selection or not any(item["value"] == selection for item in available):
+            preferred_ollama = os.environ.get("OLLAMA_MODEL", "").strip()
+            preferred_value = f"ollama:{preferred_ollama}" if preferred_ollama else ""
+            selection = next(
+                (item["value"] for item in available if item["value"] == preferred_value),
+                available[0]["value"] if available else "",
+            )
+        if not selection:
+            raise ValueError("No usable LLM provider or generation model was detected")
+        client = provider_manager.build_model(selection, common_params)
+        logger.info(f"LLM client created for {selection}")
         return client
-        
-    except Exception as e:
-        logger.error(f"Error obteniendo modelo LLM: {e}")
+    except Exception as error:
+        logger.error(f"Error obtaining LLM model: {error}")
         raise
 
 def get_provider_model(provider, model_name, common_params):
@@ -406,7 +384,9 @@ def fallback_to_available_provider(exclude=None):
         if os.environ.get("OLLAMA_MODEL", ""):
             return "ollama", os.environ["OLLAMA_MODEL"]
         else:
-            return "ollama", "llama2" # modelo por defecto
+            models = get_ollama_models()
+            if models:
+                return "ollama", models[0]
     
     # Buscar proveedores personalizados
     for key in os.environ:
@@ -447,6 +427,9 @@ class BaseChain:
     PROMPT_TEMPLATE = ""
 
     def __init__(self) -> None:
+        if not str(self.PROMPT_TEMPLATE).strip():
+            raise ValueError(f"{self.__class__.__name__} cannot be initialized with an empty prompt template")
+
         # FASE 4: Usar configuración centralizada
         from config.defaults import get_config
         config = get_config()
@@ -488,6 +471,24 @@ class BaseChain:
         Invoca la cadena LLM con reintentos automáticos usando RetryStrategy.
         Reemplaza la lógica de reintentos manual anterior.
         """
+        generation_control.checkpoint()
+        selected_model = os.environ.get("SELECTED_MODEL", "configured model")
+        operation = self.__class__.__name__
+        started_at = time.monotonic()
+        activity_log.emit(f"{operation} request started with {selected_model}", source="llm")
+
+        rendered_prompt = self.prompt.format(**kwargs)
+        if not rendered_prompt.strip():
+            raise ValueError(f"{operation} produced an empty prompt")
+        live_guidance = guidance_manager.context()
+
+        def _successful_text(value):
+            cleaned = clean_think_tags(value.strip())
+            llm_type = str(getattr(self.llm, "_llm_type", ""))
+            if llm_type not in {"codex_cli", "claude_cli"}:
+                activity_log.emit(f"{operation} response:\n{cleaned}", kind="output", source="llm")
+            return cleaned
+
         def _execute_chain():
             # Verificar que todos los parámetros necesarios estén presentes
             required_vars = set(self.prompt.input_variables)
@@ -495,25 +496,44 @@ class BaseChain:
             if missing_keys:
                 raise ValueError(f"Faltan parámetros requeridos: {missing_keys}")
 
-            start_time = time.time()
-            result = self.chain(kwargs)
+            if live_guidance:
+                guided_prompt = (
+                    rendered_prompt
+                    + "\n\n### LIVE USER GUIDANCE (newest instructions take precedence)\n"
+                    + live_guidance
+                    + "\nApply this guidance only where relevant. Preserve unaffected canon and files."
+                )
+                result = {"text": self.llm.invoke(guided_prompt)}
+            else:
+                result = self.chain(kwargs)
             
             if result:
                 # Usar la función para extraer contenido independientemente del formato
                 if "text" in result:
                     text_content = extract_content_from_llm_response(result["text"])
                     if text_content and text_content.strip():
-                        return clean_think_tags(text_content.strip())
+                        return _successful_text(text_content)
                 else:
                     # Manejar caso donde result no tiene una clave "text"
                     text_content = extract_content_from_llm_response(result)
                     if text_content and text_content.strip():
-                        return clean_think_tags(text_content.strip())
+                        return _successful_text(text_content)
             
             raise ValueError("La respuesta del modelo está vacía")
         
         # Usar RetryStrategy para ejecutar con reintentos automáticos
-        return self.retry_strategy.execute(_execute_chain)
+        try:
+            response = self.retry_strategy.execute(_execute_chain)
+            generation_control.checkpoint()
+            activity_log.emit(
+                f"{operation} completed in {int(time.monotonic() - started_at)}s",
+                kind="success",
+                source="llm",
+            )
+            return response
+        except Exception as error:
+            activity_log.emit(f"{operation} failed: {error}", kind="error", source="llm")
+            raise
 
     def process_input(self, text):
         """Limpia las cadenas de pensamiento de los inputs antes de usarlos en prompts"""

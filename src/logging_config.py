@@ -109,26 +109,31 @@ class ContextLogger:
         """Limpia el contexto"""
         self.context.clear()
     
-    def _log_with_context(self, level: int, message: str, **kwargs):
-        """Log con contexto automático"""
-        # Combinar contexto global con kwargs específicos
-        extra = {**self.context, **kwargs}
-        self.logger.log(level, message, extra=extra)
-    
-    def debug(self, message: str, **kwargs):
-        self._log_with_context(logging.DEBUG, message, **kwargs)
-    
-    def info(self, message: str, **kwargs):
-        self._log_with_context(logging.INFO, message, **kwargs)
-    
-    def warning(self, message: str, **kwargs):
-        self._log_with_context(logging.WARNING, message, **kwargs)
-    
-    def error(self, message: str, **kwargs):
-        self._log_with_context(logging.ERROR, message, **kwargs)
-    
-    def critical(self, message: str, **kwargs):
-        self._log_with_context(logging.CRITICAL, message, **kwargs)
+    def _log_with_context(self, level: int, message: str, *args, **kwargs):
+        """Log with stdlib-compatible formatting plus structured context."""
+        explicit_extra = kwargs.pop("extra", {}) or {}
+        logging_kwargs = {
+            key: kwargs.pop(key)
+            for key in ("exc_info", "stack_info", "stacklevel")
+            if key in kwargs
+        }
+        extra = {**self.context, **explicit_extra, **kwargs}
+        self.logger.log(level, message, *args, extra=extra, **logging_kwargs)
+
+    def debug(self, message: str, *args, **kwargs):
+        self._log_with_context(logging.DEBUG, message, *args, **kwargs)
+
+    def info(self, message: str, *args, **kwargs):
+        self._log_with_context(logging.INFO, message, *args, **kwargs)
+
+    def warning(self, message: str, *args, **kwargs):
+        self._log_with_context(logging.WARNING, message, *args, **kwargs)
+
+    def error(self, message: str, *args, **kwargs):
+        self._log_with_context(logging.ERROR, message, *args, **kwargs)
+
+    def critical(self, message: str, *args, **kwargs):
+        self._log_with_context(logging.CRITICAL, message, *args, **kwargs)
     
     def progress(self, message: str, **kwargs):
         """Método especial para logs de progreso (reemplaza print_progress)"""

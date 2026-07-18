@@ -18,6 +18,7 @@ import time
 import logging
 from config.defaults import get_config
 from retry_strategy import RetryStrategy, RetryableException
+from language import language_instruction, normalize_language
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,8 @@ class UnifiedContextManager:
         enable_micro_summaries: Optional[bool] = None,
         micro_summary_interval: Optional[int] = None,
         model_profile: Optional[Any] = None,
-        context_calculator: Optional[Any] = None
+        context_calculator: Optional[Any] = None,
+        language: str = "en",
     ):
         """
         Inicializa el gestor de contexto unificado.
@@ -77,6 +79,7 @@ class UnifiedContextManager:
             max_context_size = self._context_config.limited_context_size
 
         self.framework = framework
+        self.language = normalize_language(language)
         self.llm = llm
         self.mode = mode
         self.enable_micro_summaries = enable_micro_summaries
@@ -93,7 +96,7 @@ class UnifiedContextManager:
             from narrative_complexity import NarrativeComplexityAnalyzer
             from summary_quality import SummaryQualityEvaluator
 
-            self.complexity_analyzer = NarrativeComplexityAnalyzer()
+            self.complexity_analyzer = NarrativeComplexityAnalyzer(language=self.language)
             self.summary_evaluator = SummaryQualityEvaluator()
             self.dynamic_context_enabled = True
 
@@ -385,18 +388,14 @@ class UnifiedContextManager:
         
         # Crear prompt para micro-resumen
         prompt = f"""
-        Resume las siguientes secciones del capítulo actual manteniendo SOLO los elementos narrativos esenciales.
-        Máximo {max_words} palabras, enfócate en:
-        - Eventos clave que afectan la trama
-        - Desarrollo de personajes importantes
-        - Información que será relevante para continuar la historia
-        
-        IMPORTANTE: Responde SOLO en español, máximo {max_words} palabras.
-        
-        Secciones a resumir:
+        Summarize these recent sections using only continuity-critical facts: causal events,
+        character-state changes, revelations, unresolved threads, and the ending state.
+        Maximum {max_words} words. {language_instruction(self.language)}
+
+        Sections:
         {combined_text[:self._summary_config.micro_summary_prompt_max_chars]}
-        
-        Resumen esencial:
+
+        Compact continuity summary:
         """
         
         try:
@@ -502,26 +501,22 @@ class UnifiedContextManager:
             middle = chapter_content[middle_pos - middle_half:middle_pos + middle_half]
             end = chapter_content[-start_len:]
             
-            optimized_content = f"{start}\n\n[...SECCIÓN MEDIA...]\n\n{middle}\n\n[...SECCIÓN FINAL...]\n\n{end}"
+            optimized_content = f"{start}\n\n[...MIDDLE SECTION...]\n\n{middle}\n\n[...FINAL SECTION...]\n\n{end}"
         else:
             optimized_content = chapter_content
         
         prompt = f"""
-        Como editor profesional, crea un resumen estratégico del capítulo que será usado para mantener 
-        coherencia narrativa en los siguientes capítulos.
-        
-        IMPORTANTE: 
-        - Máximo 200 palabras en español
-        - Enfócate en elementos que afectarán capítulos futuros
-        - Incluye personajes, eventos clave, y elementos de trama
-        - NO incluyas detalles descriptivos innecesarios
-        
-        Capítulo: {chapter_title} (Capítulo {chapter_number} de {total_chapters})
-        
-        Contenido del capítulo:
+        Create a strategic continuity summary for use while writing later chapters.
+        Keep characters, causal events, state changes, revelations, and active plot threads.
+        Exclude decorative description. Maximum 200 words.
+        {language_instruction(self.language)}
+
+        Chapter: {chapter_title} ({chapter_number} of {total_chapters})
+
+        Chapter content:
         {optimized_content}
-        
-        Resumen estratégico para continuidad narrativa:
+
+        Strategic continuity summary:
         """
         
         try:
@@ -548,7 +543,9 @@ class UnifiedContextManager:
     
     def _create_fallback_summary(self, chapter_title: str, chapter_number: int) -> str:
         """Crea un resumen básico en caso de error."""
-        return f"Capítulo {chapter_number} ({chapter_title}): La historia continúa desarrollándose."
+        if self.language == "es":
+            return f"Capitulo {chapter_number} ({chapter_title}): contenido en curso; resumen detallado pendiente."
+        return f"Chapter {chapter_number} ({chapter_title}): content in progress; detailed summary pending."
     
     def _update_global_memory(self, chapter_summary: str, chapter_key: str, chapter_title: str):
         """Actualiza la memoria global del libro con información del nuevo capítulo."""
@@ -608,13 +605,13 @@ class UnifiedContextManager:
             return
         
         prompt = f"""
-        Condensa el siguiente resumen de la historia manteniendo SOLO los elementos más importantes
-        para la coherencia narrativa general. Máximo 300 palabras en español.
-        
-        Resumen actual:
+        Condense this book summary to the facts required for overall narrative continuity.
+        Maximum 300 words. {language_instruction(self.language)}
+
+        Current summary:
         {long_summary}
-        
-        Resumen condensado:
+
+        Condensed summary:
         """
         
         try:
@@ -900,7 +897,8 @@ class ProgressiveWriterChain(BaseEventChain):
     """
     
     PROMPT_TEMPLATE = """
-    Eres un escritor profesional de {genre} en español.
+    You are a professional long-form author working in {genre}.
+    {language_instruction}
     
     ### INFORMACIÓN ESENCIAL:
     - Título: "{title}"
@@ -908,25 +906,24 @@ class ProgressiveWriterChain(BaseEventChain):
     - Capítulo actual: {chapter_title} (Capítulo {current_chapter} de {total_chapters})
     - Sección: {section_number} de {total_sections}
     
-    ### CONTEXTO DE LA HISTORIA:
+    ### CONTEXTO DEL LIBRO:
     {story_context}
     
     ### CONTENIDO RECIENTE DEL CAPÍTULO:
     {recent_content}
     
-    ### IDEA A DESARROLLAR:
+    ### OBJETIVO DE LA SECCION:
     {current_idea}
     
-    IMPORTANTE: 
-    - Escribe EXCLUSIVAMENTE texto narrativo en español
-    - NO incluyas notas, comentarios ni explicaciones
-    - Mantén la coherencia con el contexto previo
-    - Desarrolla la idea de forma natural y envolvente
-    
-    Texto narrativo:"""
+    Return polished book prose only. In fiction preserve continuity and develop the beat
+    through dramatized action, perception, and dialogue. In nonfiction advance the claim,
+    chronology, evidence, or instruction without inventing facts, citations, or sources.
+    Do not include notes or commentary.
+
+    Book prose:"""
 
     def run(self, context_manager, genre, style, title, chapter_title, current_idea, 
-            current_chapter, total_chapters, section_number, total_sections):
+            current_chapter, total_chapters, section_number, total_sections, language="en"):
         
         print_progress(f"📝 Escribiendo sección {section_number}/{total_sections} (contexto inteligente)")
         
@@ -955,6 +952,7 @@ class ProgressiveWriterChain(BaseEventChain):
                 total_chapters=total_chapters,
                 section_number=section_number,
                 total_sections=total_sections
+                , language_instruction=language_instruction(language)
             )
             
             print_progress(f"✓ Sección {section_number} completada ({len(result)} caracteres)")
@@ -963,4 +961,8 @@ class ProgressiveWriterChain(BaseEventChain):
         except Exception as e:
             print_progress(f"❌ Error generando sección {section_number}: {str(e)}")
             # Fallback simple
-            return f"La historia continuó desarrollándose en este punto del capítulo {chapter_title}."
+            return (
+                f"La historia continuo desarrollandose en este punto del capitulo {chapter_title}."
+                if normalize_language(language) == "es"
+                else f"The story continued to develop at this point in {chapter_title}."
+            )

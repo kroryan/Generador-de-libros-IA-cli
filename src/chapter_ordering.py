@@ -18,6 +18,9 @@ from dataclasses import dataclass, field
 import re
 import os
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ChapterType(Enum):
@@ -87,28 +90,36 @@ class ChapterOrdering:
     configurable y extensible.
     """
     
-    # Patrones por defecto (español)
+    # Default patterns for English and Spanish chapter labels.
     DEFAULT_PATTERNS = {
         "prologue": [
             r"^prólogo$",
             r"^prologo$",
             r"^introducción$",
             r"^introduccion$",
-            r"^prefacio$"
+            r"^prefacio$",
+            r"^prologue$",
+            r"^introduction$",
+            r"^preface$"
         ],
         "epilogue": [
             r"^epílogo$",
             r"^epilogo$",
             r"^conclusión$",
             r"^conclusion$",
-            r"^final$"
+            r"^final$",
+            r"^epilogue$",
+            r"^conclusion$"
         ],
         "numbered": [
             r"^capítulo\s+(\d+)",
             r"^capitulo\s+(\d+)",
             r"^cap\.?\s+(\d+)",
             r"^capítulo\s+([IVX]+)",
-            r"^capitulo\s+([IVX]+)"
+            r"^capitulo\s+([IVX]+)",
+            r"^chapter\s+(\d+)",
+            r"^ch\.?\s+(\d+)",
+            r"^chapter\s+([IVX]+)"
         ],
         "part": [
             r"^parte\s+(\d+)",
@@ -135,7 +146,7 @@ class ChapterOrdering:
     def __init__(
         self,
         patterns: Optional[Dict[str, List[str]]] = None,
-        locale: str = "es",
+        locale: str = "en",
         strict_mode: bool = False,
         preserve_unknown_order: bool = True
     ):
@@ -309,9 +320,8 @@ class ChapterOrdering:
         # Validar secuencia
         warnings = self.validate_sequence(metadata_list)
         if warnings:
-            from utils import print_progress
             for warning in warnings:
-                print_progress(f"⚠️ {warning}")
+                logger.warning("Chapter ordering: %s", warning)
             
             if self.strict_mode:
                 raise ValueError(f"Errores en secuencia de capítulos: {warnings}")

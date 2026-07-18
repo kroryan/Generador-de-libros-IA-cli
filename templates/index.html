@@ -1,452 +1,829 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberNovelist AI - Generador de Libros</title>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.0/socket.io.js"></script>
+    <meta name="color-scheme" content="dark">
+    <title>CyberNovelist AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
 </head>
 <body>
-    <div class="scanner-overlay"></div>
-    <div class="noise-overlay"></div>
-    
-    <div class="container">
-        <header>
-            <div class="logo">
-                <div class="icon-glow"></div>
-                <h1><span class="glitch" data-text="CYBERNOVELIST">CYBERNOVELIST</span> AI</h1>
-                <div class="tagline">GENERADOR NEURAL DE NARRATIVAS</div>
+    <canvas id="matrix-background" aria-hidden="true"></canvas>
+    <div class="page-shell">
+        <header class="app-header">
+            <div class="brand">
+                <h1>CyberNovelist AI</h1>
+                <p data-i18n="tagline">OBSIDIAN-FIRST LONG-FORM BOOKS</p>
             </div>
+            <div class="system-indicator" data-i18n="localSystem">LOCAL SYSTEM READY</div>
         </header>
-        
-        <main>
-            <div class="panel control-panel">
-                <div class="panel-header">
-                    <h2>PARÁMETROS DE GENERACIÓN</h2>
-                    <div class="panel-controls">
-                        <span class="control"></span>
-                        <span class="control"></span>
-                        <span class="control"></span>
-                    </div>
+
+        <main class="workspace">
+            <section class="tool-panel" aria-labelledby="configuration-title">
+                <div class="panel-heading">
+                    <h2 id="configuration-title" data-i18n="configuration">BOOK CONFIGURATION</h2>
                 </div>
-                
-                <form id="generate-form">
-                    <div class="form-group">
-                        <label for="model">MODELO IA:</label>
-                        <select id="model" name="model">
-                            {% for model in models %}
-                                <option value="{{ model.value }}">{{ model.display_name }}</option>
-                            {% endfor %}
-                        </select>
-                        <button type="button" id="refresh-models" class="small-button">
-                            <span class="button-content">ACTUALIZAR</span>
-                        </button>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="subject">TEMA DEL LIBRO:</label>
-                        <textarea id="subject" name="subject" rows="4" placeholder="Escribe el tema de tu libro...">El tema del libro es una aventura épica que combina fantasía y ciencia ficción. La historia se desarrolla en un universo donde la magia compleja coexiste con la tecnología avanzada, permitiendo viajes espaciales en naves impulsadas tanto por energía mágica como por tecnología futurista. Los personajes exploran mundos misteriosos, enfrentando desafíos que requieren tanto el dominio de antiguos hechizos como la comprensión de avanzados sistemas tecnológicos.</textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="profile">PERFIL DE LA HISTORIA:</label>
-                        <textarea id="profile" name="profile" rows="4" placeholder="Escribe el perfil de tu historia...">Esta novela fusiona elementos de fantasía épica y ciencia ficción espacial, creando un universo único donde la magia ancestral y la tecnología avanzada se entrelazan de formas sorprendentes. La historia está dirigida a lectores que disfrutan de mundos complejos donde los límites entre la magia y la ciencia se desdibujan. A través de una narrativa inmersiva, la obra explora temas como el poder, la aventura, el descubrimiento y la coexistencia de diferentes formas de conocimiento.</textarea>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group half">
-                            <label for="style">ESTILO NARRATIVO:</label>
-                            <select id="style" name="style">
-                                <option value="Narrativo-Épico-Imaginativo">Narrativo-Épico-Imaginativo</option>
-                                <option value="Descriptivo-Detallado-Literario">Descriptivo-Detallado-Literario</option>
-                                <option value="Directo-Ágil-Conversacional">Directo-Ágil-Conversacional</option>
-                                <option value="Poético-Reflexivo-Profundo">Poético-Reflexivo-Profundo</option>
-                                <option value="Técnico-Preciso-Científico">Técnico-Preciso-Científico</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group half">
-                            <label for="genre">GÉNERO:</label>
-                            <select id="genre" name="genre">
-                                <option value="Fantasía y Ciencia Ficción">Fantasía y Ciencia Ficción</option>
-                                <option value="Ciencia Ficción Pura">Ciencia Ficción Pura</option>
-                                <option value="Fantasía Épica">Fantasía Épica</option>
-                                <option value="Cyberpunk">Cyberpunk</option>
-                                <option value="Distopía Futurista">Distopía Futurista</option>
-                                <option value="Space Opera">Space Opera</option>
-                                <option value="Realismo Mágico">Realismo Mágico</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="settings-section">
-                        <div class="settings-header">
-                            <span class="expand-icon">+</span>
-                            <h3>OPCIONES DE EXPORTACIÓN</h3>
-                        </div>
-                        
-                        <div class="settings-content" style="display: none;">
-                            <div class="form-row">
-                                <div class="form-group half">
-                                    <label for="output-format">FORMATO:</label>
-                                    <div class="format-selector">
-                                        <label class="format-option">
-                                            <input type="radio" name="output-format" value="docx" checked>
-                                            <span class="format-label">DOCX</span>
-                                        </label>
-                                        <label class="format-option">
-                                            <input type="radio" name="output-format" value="pdf">
-                                            <span class="format-label">PDF</span>
-                                        </label>
-                                    </div>
-                                </div>
-                                
-                                <div class="form-group half">
-                                    <label for="output-path">RUTA:</label>
-                                    <input type="text" id="output-path" name="output-path" value="./docs" placeholder="Ruta para guardar el libro...">
+                <div class="panel-body">
+                    <form id="generate-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="provider" data-i18n="provider">PROVIDER</label>
+                                <div class="model-control">
+                                    <select id="provider" name="provider" required>
+                                        <option value="" disabled selected>Loading providers...</option>
+                                    </select>
+                                    <button type="button" id="manage-providers" class="icon-button" title="Manage providers" aria-label="Manage providers">P</button>
                                 </div>
                             </div>
+                            <div class="form-group">
+                                <label for="language" data-i18n="bookLanguage">BOOK LANGUAGE</label>
+                                <select id="language" name="language">
+                                    <option value="en">English</option>
+                                    <option value="es">Español</option>
+                                </select>
+                            </div>
                         </div>
+                        <div class="form-group">
+                            <label for="model" data-i18n="model">MODEL</label>
+                                <div class="model-control">
+                                    <select id="model" name="model" required>
+                                        <option value="" disabled selected>No generation models detected</option>
+                                    </select>
+                                    <button type="button" id="refresh-models" class="icon-button" title="Refresh models" aria-label="Refresh models">R</button>
+                                </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="source-vault" data-i18n="sourceVault">SOURCE VAULT</label>
+                            <div class="model-control">
+                                <select id="source-vault">
+                                    <option value="" data-i18n="newVault">New automatic vault</option>
+                                </select>
+                                <button type="button" id="refresh-vaults" class="icon-button" title="Refresh vaults" aria-label="Refresh vaults">R</button>
+                            </div>
+                        </div>
+                        <div id="vault-context-options" class="form-row" hidden>
+                            <div class="form-group">
+                                <label for="source-book" data-i18n="sourceBook">BOOK</label>
+                                <select id="source-book"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="vault-mode" data-i18n="vaultMode">VAULT USE</label>
+                                <select id="vault-mode">
+                                    <option value="continue" data-i18n="continueVault">Continue story</option>
+                                    <option value="related" data-i18n="relatedVault">Create related second book</option>
+                                    <option value="revise" data-i18n="reviseVault">Revise into a new project</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="subject" data-i18n="premise">PREMISE</label>
+                            <textarea id="subject" name="subject" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="profile" data-i18n="profile">READER, CHARACTER, AND CONSTRAINTS BRIEF</label>
+                            <textarea id="profile" name="profile" required></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="style" data-i18n="style">NARRATIVE STYLE</label>
+                                <select id="style" name="style"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="genre" data-i18n="genre">GENRE</label>
+                                <select id="genre" name="genre"></select>
+                            </div>
+                        </div>
+
+                        <details class="advanced-block" open>
+                            <summary data-i18n="output">OUTPUT</summary>
+                            <div class="advanced-content">
+                                <label class="check-row" for="agent-tools">
+                                    <input type="checkbox" id="agent-tools" checked>
+                                    <span data-i18n="agentTools">NOVELIST AGENT VAULT TOOLS</span>
+                                </label>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="output-format" data-i18n="format">PUBLISHED FORMAT</label>
+                                        <select id="output-format" name="output-format">
+                                            <option value="docx">DOCX</option>
+                                            <option value="pdf">PDF</option>
+                                            <option value="obsidian">Obsidian vault (ZIP)</option>
+                                            <option value="md">Markdown</option>
+                                            <option value="html">HTML</option>
+                                            <option value="txt">Plain text</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="output-path" data-i18n="directory">OUTPUT DIRECTORY</label>
+                                        <input type="text" id="output-path" value="./books">
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+                        <button type="submit" id="generate-button" class="command-button" data-i18n="generate">GENERATE BOOK</button>
+                        <div id="generation-controls" class="generation-controls" hidden>
+                            <button type="button" id="pause-button" class="secondary-command" data-i18n="pause">PAUSE</button>
+                            <button type="button" id="cancel-button" class="secondary-command danger-command" data-i18n="cancel">CANCEL</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <section class="tool-panel" aria-labelledby="progress-title">
+                <div class="panel-heading">
+                    <h2 id="progress-title" data-i18n="generationProgress">GENERATION PROGRESS</h2>
+                </div>
+                <div class="status-grid">
+                    <div class="status-cell">
+                        <span class="status-label" data-i18n="statusLabel">STATUS</span>
+                        <span id="status" class="status-value" data-i18n="waiting">Waiting for a request</span>
                     </div>
-                    
-                    <button type="button" id="generate-button" class="cyber-button">
-                        <span class="button-content">GENERAR LIBRO</span>
-                        <span class="button-glitch"></span>
-                    </button>
+                    <div class="status-cell">
+                        <span class="status-label" data-i18n="titleLabel">TITLE</span>
+                        <span id="title" class="status-value">-</span>
+                    </div>
+                    <div class="status-cell">
+                        <span class="status-label" data-i18n="chapterLabel">CHAPTER</span>
+                        <span id="chapter" class="status-value">-</span>
+                    </div>
+                    <div class="status-cell">
+                        <span class="status-label" data-i18n="projectLabel">PROJECT</span>
+                        <span id="project" class="status-value">-</span>
+                    </div>
+                </div>
+                <div class="progress-track">
+                    <div id="progress-bar" class="progress-fill"></div>
+                    <div id="progress-text" class="progress-text">0%</div>
+                </div>
+                <div id="pipeline-log" class="terminal" role="log" aria-live="polite"></div>
+                <form id="guidance-form" class="guidance-form">
+                    <label class="guidance-option" for="web-search">
+                        <input type="checkbox" id="web-search">
+                        <span data-i18n="webSearch">ALLOW DUCKDUCKGO WEB RESEARCH</span>
+                    </label>
+                    <textarea id="guidance-message" maxlength="4000" rows="2" data-i18n-placeholder="guidancePlaceholder" placeholder="Add a live instruction or correction for the author agent..."></textarea>
+                    <button type="submit" id="guidance-send" class="secondary-command" data-i18n="sendGuidance">SEND</button>
                 </form>
-            </div>
-            
-            <div class="panel output-panel">
-                <div class="panel-header">
-                    <h2>PROGRESO DE GENERACIÓN</h2>
-                    <div class="panel-controls">
-                        <span class="control"></span>
-                        <span class="control"></span>
-                        <span class="control"></span>
-                    </div>
+                <div id="download-container" class="download-area">
+                    <a class="download-button" href="/download" data-i18n="download">DOWNLOAD PUBLISHED BOOK</a>
                 </div>
-                
-                <div class="generation-status">
-                    <div class="status-item">
-                        <div class="status-label">Estado:</div>
-                        <div id="status" class="status-value">Esperando entrada...</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Título:</div>
-                        <div id="title" class="status-value">-</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Progreso:</div>
-                        <div class="progress-container">
-                            <div id="progress-bar" class="progress-bar"></div>
-                            <div id="progress-text" class="progress-text">0%</div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="tabs-container">
-                    <div class="tabs">
-                        <button class="tab-button active" data-tab="overview">RESUMEN</button>
-                        <button class="tab-button" data-tab="results">GENERACIÓN</button>
-                    </div>
-                    
-                    <div id="tab-overview" class="tab-content active">
-                        <div id="overview-log" class="cyberpunk-terminal"></div>
-                    </div>
-                    
-                    <div id="tab-results" class="tab-content">
-                        <div id="results-log" class="cyberpunk-terminal"></div>
-                    </div>
-                </div>
-                
-                <div id="download-container" style="display: none;">
-                    <a id="download-link" class="cyber-button">
-                        <span class="button-content">DESCARGAR LIBRO</span>
-                        <span class="button-glitch"></span>
-                    </a>
-                </div>
-            </div>
+            </section>
         </main>
-        
-        <footer>
-            <p>© 2025 CyberNovelist AI - Generador de Realidades Narrativas</p>
-        </footer>
+        <footer class="app-footer">CyberNovelist AI / Obsidian-first pipeline</footer>
     </div>
 
+    <dialog id="provider-dialog" class="provider-dialog">
+        <div class="dialog-heading">
+            <h2 data-i18n="providerManager">PROVIDER MANAGER</h2>
+            <button type="button" id="close-providers" class="icon-button" aria-label="Close">X</button>
+        </div>
+        <div class="dialog-body">
+            <div id="provider-list" class="provider-list"></div>
+            <form id="provider-form" class="provider-form">
+                <h3 data-i18n="addProvider">ADD API PROVIDER</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="provider-name" data-i18n="providerName">NAME</label>
+                        <input id="provider-name" type="text" required placeholder="My provider">
+                    </div>
+                    <div class="form-group">
+                        <label for="provider-kind" data-i18n="providerType">TYPE</label>
+                        <select id="provider-kind">
+                            <option value="openai_compatible">OpenAI-compatible</option>
+                            <option value="anthropic">Anthropic API</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="provider-endpoint" data-i18n="endpoint">API ENDPOINT</label>
+                    <input id="provider-endpoint" type="text" required value="https://api.openai.com/v1">
+                </div>
+                <div class="form-group">
+                    <label for="provider-key" data-i18n="apiKey">API KEY (OPTIONAL FOR LOCAL OPENAI-COMPATIBLE ENDPOINTS)</label>
+                    <input id="provider-key" type="password" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label for="provider-models" data-i18n="modelsOptional">MODELS (OPTIONAL, COMMA-SEPARATED)</label>
+                    <input id="provider-models" type="text" placeholder="model-a, model-b">
+                </div>
+                <button type="submit" class="command-button" data-i18n="saveProvider">SAVE AND DISCOVER</button>
+                <p id="provider-form-status" class="form-status" role="status"></p>
+            </form>
+        </div>
+    </dialog>
+
     <script>
-        // Configuración de Socket.IO
-        const socket = io();
-        
-        // Referencias a elementos del DOM
-        const statusElement = document.getElementById('status');
-        const titleElement = document.getElementById('title');
-        const progressBar = document.getElementById('progress-bar');
-        const progressText = document.getElementById('progress-text');
-        const overviewLog = document.getElementById('overview-log');
-        const resultsLog = document.getElementById('results-log');
-        const downloadContainer = document.getElementById('download-container');
-        const downloadLink = document.getElementById('download-link');
-        const modelSelector = document.getElementById('model');
-        const refreshModelsButton = document.getElementById('refresh-models');
-        
-        // Configuración de opciones de exportación
-        const settingsHeaders = document.querySelectorAll('.settings-header');
-        settingsHeaders.forEach(header => {
-            header.addEventListener('click', function() {
-                const content = this.nextElementSibling;
-                const icon = this.querySelector('.expand-icon');
-                
-                if (content.style.display === 'none' || !content.style.display) {
-                    content.style.display = 'block';
-                    icon.textContent = '-';
-                } else {
-                    content.style.display = 'none';
-                    icon.textContent = '+';
-                }
-            });
-        });
-        
-        // Event listener para el botón de actualización de modelos
-        refreshModelsButton.addEventListener('click', function() {
-            addOverviewMessage("> Actualizando lista de modelos disponibles...");
-            axios.get('/models')
-                .then(response => {
-                    const models = response.data.models;
-                    modelSelector.innerHTML = '';  // Limpiar opciones actuales
-                    
-                    models.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.value;
-                        option.textContent = model.display_name;
-                        modelSelector.appendChild(option);
-                    });
-                    
-                    addOverviewMessage(`> ${models.length} modelos encontrados.`);
-                })
-                .catch(error => {
-                    console.error(error);
-                    addOverviewMessage('> Error al actualizar la lista de modelos.');
-                });
-        });
-        
-        // Event listeners para las pestañas
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', function() {
-                // Desactivar todas las pestañas
-                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                
-                // Activar la pestaña seleccionada
-                this.classList.add('active');
-                document.getElementById('tab-' + this.dataset.tab).classList.add('active');
-            });
-        });
-        
-        // Event listener para el botón de generación
-        document.getElementById('generate-button').addEventListener('click', function() {
-            const subject = document.getElementById('subject').value;
-            const profile = document.getElementById('profile').value;
-            const style = document.getElementById('style').value;
-            const genre = document.getElementById('genre').value;
-            const model = document.getElementById('model').value;
-            
-            // Obtener el formato seleccionado
-            const outputFormat = document.querySelector('input[name="output-format"]:checked').value;
-            // Obtener la ruta de salida
-            const outputPath = document.getElementById('output-path').value || './docs';
-            
-            // Limpiar logs previos
-            overviewLog.innerHTML = '';
-            resultsLog.innerHTML = '';
-            
-            // Ocultar botón de descarga
-            downloadContainer.style.display = 'none';
-            
-            // Actualizar UI inicial
-            addOverviewMessage('> Iniciando proceso de generación del libro...');
-            addOverviewMessage(`> Modelo seleccionado: ${model}`);
-            addOverviewMessage(`> Formato de salida: ${outputFormat.toUpperCase()}`);
-            addOverviewMessage(`> Directorio de salida: ${outputPath}`);
-            
-            // Enviar solicitud al servidor
-            axios.post('/generate', { 
-                subject, 
-                profile, 
-                style, 
-                genre, 
-                model,
-                outputFormat,
-                outputPath
-            })
-                .then(response => {
-                    console.log(response.data);
-                })
-                .catch(error => {
-                    console.error(error);
-                    statusElement.textContent = 'Error al iniciar la generación';
-                    addOverviewMessage('> Error: No se pudo iniciar el proceso de generación.');
-                });
-        });
-        
-        // Función para añadir mensajes al log de resumen
-        function addOverviewMessage(message) {
-            const messageElement = document.createElement('div');
-            messageElement.className = 'log-message';
-            messageElement.textContent = message;
-            overviewLog.appendChild(messageElement);
-            overviewLog.scrollTop = overviewLog.scrollHeight;
+        const copy = {
+            en: {
+                tagline: 'OBSIDIAN-FIRST LONG-FORM BOOKS', localSystem: 'LOCAL SYSTEM READY',
+                configuration: 'BOOK CONFIGURATION', provider: 'PROVIDER', model: 'MODEL', bookLanguage: 'BOOK LANGUAGE',
+                premise: 'PREMISE OR SUBJECT', profile: 'READER, CONTENT, AND CONSTRAINTS BRIEF',
+                sourceVault: 'SOURCE VAULT', newVault: 'New automatic vault', vaultMode: 'VAULT USE',
+                sourceBook: 'BOOK TO USE', booksError: 'Could not load books from vault',
+                continueVault: 'Continue story', relatedVault: 'Create related second book', reviseVault: 'Revise into a new project',
+                vaultsFound: 'vaults detected.', vaultsError: 'Could not discover vaults', refreshVaultsTitle: 'Refresh vaults',
+                style: 'WRITING STYLE', genre: 'GENRE OR BOOK TYPE', output: 'OUTPUT',
+                agentTools: 'AUTHOR AGENT VAULT TOOLS', format: 'PUBLISHED FORMAT',
+                directory: 'OUTPUT DIRECTORY', generate: 'GENERATE BOOK', generating: 'GENERATING...',
+                pause: 'PAUSE', resume: 'RESUME', cancel: 'CANCEL', pauseError: 'Could not pause generation',
+                cancelError: 'Could not cancel generation',
+                sendGuidance: 'SEND', guidancePlaceholder: 'Add a live instruction or correction for the author agent...',
+                guidanceSent: 'Guidance queued for the author agent', guidanceError: 'Could not send guidance',
+                webSearch: 'ALLOW DUCKDUCKGO WEB RESEARCH',
+                generationProgress: 'GENERATION PROGRESS', statusLabel: 'STATUS', titleLabel: 'TITLE',
+                chapterLabel: 'CHAPTER', projectLabel: 'PROJECT', waiting: 'Waiting for a request', download: 'DOWNLOAD PUBLISHED BOOK',
+                noModels: 'No generation models detected', modelsFound: 'generation models detected.',
+                modelsError: 'Could not query local models', requestError: 'Could not start generation',
+                starting: 'Starting book generation with', refreshTitle: 'Refresh models', manageTitle: 'Manage providers',
+                providerManager: 'PROVIDER MANAGER', addProvider: 'ADD API PROVIDER', providerName: 'NAME',
+                providerType: 'TYPE', endpoint: 'API ENDPOINT', apiKey: 'API KEY (OPTIONAL FOR LOCAL OPENAI-COMPATIBLE ENDPOINTS)',
+                modelsOptional: 'MODELS (OPTIONAL, COMMA-SEPARATED)', saveProvider: 'SAVE AND DISCOVER',
+                noProviders: 'No usable providers detected', providerSaved: 'Provider saved.',
+                providerDeleted: 'Provider deleted.', testConnection: 'TEST', deleteProvider: 'DELETE',
+                stillActive: 'Generation process is still active', connectionLost: 'Server connection lost; retrying',
+                subjectPlaceholder: 'Describe the story, historical subject, thesis, scope, or practical outcome...',
+                profilePlaceholder: 'Define audience, voice, depth, boundaries, evidence needs, and intended result...'
+            },
+            es: {
+                tagline: 'LIBROS EXTENSOS CON OBSIDIAN COMO FUENTE', localSystem: 'SISTEMA LOCAL PREPARADO',
+                configuration: 'CONFIGURACION DEL LIBRO', provider: 'PROVEEDOR', model: 'MODELO', bookLanguage: 'IDIOMA DEL LIBRO',
+                premise: 'PREMISA O TEMA', profile: 'LECTOR, CONTENIDO Y RESTRICCIONES',
+                sourceVault: 'BOVEDA DE CONTEXTO', newVault: 'Nueva boveda automatica', vaultMode: 'USO DE LA BOVEDA',
+                sourceBook: 'LIBRO A UTILIZAR', booksError: 'No se pudieron cargar los libros de la boveda',
+                continueVault: 'Continuar historia', relatedVault: 'Crear segundo libro relacionado', reviseVault: 'Revisar en un proyecto nuevo',
+                vaultsFound: 'bovedas detectadas.', vaultsError: 'No se pudieron descubrir bovedas', refreshVaultsTitle: 'Actualizar bovedas',
+                style: 'ESTILO DE ESCRITURA', genre: 'GENERO O TIPO DE LIBRO', output: 'SALIDA',
+                agentTools: 'HERRAMIENTAS DEL AGENTE AUTOR', format: 'FORMATO PUBLICADO',
+                directory: 'DIRECTORIO DE SALIDA', generate: 'GENERAR LIBRO', generating: 'GENERANDO...',
+                pause: 'PAUSAR', resume: 'REANUDAR', cancel: 'CANCELAR', pauseError: 'No se pudo pausar la generacion',
+                cancelError: 'No se pudo cancelar la generacion',
+                sendGuidance: 'ENVIAR', guidancePlaceholder: 'Anade una orden, correccion o apunte para el agente autor...',
+                guidanceSent: 'Instruccion enviada al agente autor', guidanceError: 'No se pudo enviar la instruccion',
+                webSearch: 'PERMITIR INVESTIGACION WEB CON DUCKDUCKGO',
+                generationProgress: 'PROGRESO DE GENERACION', statusLabel: 'ESTADO', titleLabel: 'TITULO',
+                chapterLabel: 'CAPITULO', projectLabel: 'PROYECTO', waiting: 'Esperando una solicitud', download: 'DESCARGAR LIBRO PUBLICADO',
+                noModels: 'No se detectaron modelos de generacion', modelsFound: 'modelos de generacion detectados.',
+                modelsError: 'No se pudieron consultar los modelos locales', requestError: 'No se pudo iniciar la generacion',
+                starting: 'Iniciando la generacion con', refreshTitle: 'Actualizar modelos', manageTitle: 'Gestionar proveedores',
+                providerManager: 'GESTOR DE PROVEEDORES', addProvider: 'ANADIR PROVEEDOR API', providerName: 'NOMBRE',
+                providerType: 'TIPO', endpoint: 'ENDPOINT API', apiKey: 'CLAVE API (OPCIONAL PARA ENDPOINTS OPENAI-COMPATIBLE LOCALES)',
+                modelsOptional: 'MODELOS (OPCIONAL, SEPARADOS POR COMAS)', saveProvider: 'GUARDAR Y DESCUBRIR',
+                noProviders: 'No se detectaron proveedores utilizables', providerSaved: 'Proveedor guardado.',
+                providerDeleted: 'Proveedor eliminado.', testConnection: 'PROBAR', deleteProvider: 'ELIMINAR',
+                stillActive: 'El proceso de generacion sigue activo', connectionLost: 'Conexion con el servidor perdida; reintentando',
+                subjectPlaceholder: 'Describe la historia, tema historico, tesis, alcance o resultado practico...',
+                profilePlaceholder: 'Define el publico, voz, profundidad, limites, pruebas necesarias y resultado...'
+            }
+        };
+
+        const samples = {
+            en: {
+                subject: 'An epic adventure where rigorous magic and advanced technology coexist. Starships cross dangerous systems through engineered drives and ancient magical laws, while explorers uncover a discovery that can destabilize both traditions.',
+                profile: 'Adult speculative-fiction readers. Follow a capable but divided protagonist whose loyalty to scientific evidence conflicts with a magical inheritance. Use immersive prose, causal plotting, morally difficult choices, and a complete character arc.',
+                styles: ['Epic, imaginative, and character-driven', 'Detailed literary prose', 'Clear chronological historiography', 'Analytical and source-driven', 'Accessible popular nonfiction', 'Academic and evidence-led', 'Journalistic narrative nonfiction', 'Biographical and psychologically precise', 'Technical and instructional', 'Reflective essayistic', 'Direct, agile, and conversational', 'Poetic and reflective', 'Precise hard science fiction', 'Suspenseful and investigative'],
+                genres: ['Science fantasy', 'Science fiction', 'Epic fantasy', 'Cyberpunk', 'Dystopian fiction', 'Space opera', 'Magical realism', 'History', 'Historical fiction', 'Biography', 'Memoir', 'Narrative nonfiction', 'Popular science', 'Essay', 'True crime', 'Philosophy', 'Politics and society', 'Technical handbook', 'Self-improvement', 'Travel writing', 'Romance', 'Mystery', 'Horror']
+            },
+            es: {
+                subject: 'Una aventura epica donde conviven una magia rigurosa y una tecnologia avanzada. Naves estelares cruzan sistemas peligrosos mediante motores de ingenieria y antiguas leyes magicas, mientras una expedicion descubre algo capaz de desestabilizar ambas tradiciones.',
+                profile: 'Lectores adultos de ficcion especulativa. Sigue a un protagonista capaz pero dividido, cuya lealtad a las pruebas cientificas entra en conflicto con una herencia magica. Usa prosa inmersiva, una trama causal, decisiones morales dificiles y un arco de personaje completo.',
+                styles: ['Epico, imaginativo y centrado en personajes', 'Prosa literaria detallada', 'Historiografia cronologica y clara', 'Analitico y guiado por fuentes', 'Divulgacion accesible', 'Academico y basado en pruebas', 'No ficcion narrativa periodistica', 'Biografico y psicologicamente preciso', 'Tecnico e instructivo', 'Ensayistico y reflexivo', 'Directo, agil y conversacional', 'Poetico y reflexivo', 'Ciencia ficcion dura y precisa', 'Investigativo y con suspense'],
+                genres: ['Fantasia cientifica', 'Ciencia ficcion', 'Fantasia epica', 'Cyberpunk', 'Ficcion distopica', 'Opera espacial', 'Realismo magico', 'Historia', 'Ficcion historica', 'Biografia', 'Memorias', 'No ficcion narrativa', 'Divulgacion cientifica', 'Ensayo', 'Crimen real', 'Filosofia', 'Politica y sociedad', 'Manual tecnico', 'Desarrollo personal', 'Literatura de viajes', 'Romance', 'Misterio', 'Terror']
+            }
+        };
+
+        const byId = (id) => document.getElementById(id);
+        const languageSelect = byId('language');
+        const subject = byId('subject');
+        const profile = byId('profile');
+        const providerSelect = byId('provider');
+        const modelSelect = byId('model');
+        const generateButton = byId('generate-button');
+        const pauseButton = byId('pause-button');
+        const cancelButton = byId('cancel-button');
+        const generationControls = byId('generation-controls');
+        const sourceVaultSelect = byId('source-vault');
+        const sourceBookSelect = byId('source-book');
+        const vaultModeSelect = byId('vault-mode');
+        const vaultContextOptions = byId('vault-context-options');
+        const genreSelect = byId('genre');
+        const agentToolsCheckbox = byId('agent-tools');
+        const webSearchCheckbox = byId('web-search');
+        const logElement = byId('pipeline-log');
+        let currentLanguage = 'en';
+        let lastStateSignature = '';
+        let providersCache = [];
+        let generationBusy = false;
+        let lastActivitySequence = 0;
+        let activityEndpointAvailable = null;
+        let lastVisibleActivity = Date.now();
+        let generationStartedAt = null;
+
+        function addLog(message, isError = false, kind = 'info', timestamp = '') {
+            const line = document.createElement('div');
+            line.className = `log-line log-${kind}${isError ? ' log-error' : ''}`;
+            const prefix = timestamp ? `[${new Date(timestamp).toLocaleTimeString()}] ` : '';
+            line.textContent = `${prefix}${message}`;
+            logElement.appendChild(line);
+            logElement.scrollTop = logElement.scrollHeight;
+            lastVisibleActivity = Date.now();
         }
-        
-        // Variables para gestionar los mensajes y evitar fragmentación
-        let currentThinkingBlock = null;
-        let currentResultBlock = null;
-        let lastMessageType = null;
-        let inThinkingMode = false;
-        
-        // Función para añadir mensajes al log de resultados
-        function addMessage(message, type) {
-            // Determinar si crear un nuevo bloque o actualizar uno existente
-            let messageElement;
-            
-            // Manejar el cambio de modo de pensamiento
-            if (type === 'start') {
-                inThinkingMode = true;
-                lastMessageType = 'thinking';
-                messageElement = document.createElement('div');
-                messageElement.className = 'thinking-message';
-                messageElement.textContent = message;
-                resultsLog.appendChild(messageElement);
-                currentThinkingBlock = messageElement;
-                currentResultBlock = null;
-            } 
-            else if (type === 'end') {
-                inThinkingMode = false;
-                // Si tenemos un bloque de pensamiento actual, actualizarlo
-                if (currentThinkingBlock) {
-                    if (message && message.trim()) {
-                        currentThinkingBlock.textContent += ' ' + message;
-                    }
-                }
-                currentThinkingBlock = null;
-                lastMessageType = null;
-            }
-            else if (type === 'content' && inThinkingMode) {
-                // Añadir al bloque de pensamiento actual o crear uno nuevo
-                if (currentThinkingBlock) {
-                    if (message && message.trim()) {
-                        if (!currentThinkingBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
-                            currentThinkingBlock.textContent += ' ';
-                        }
-                        currentThinkingBlock.textContent += message;
-                    }
-                } else {
-                    messageElement = document.createElement('div');
-                    messageElement.className = 'thinking-message';
-                    messageElement.textContent = message;
-                    resultsLog.appendChild(messageElement);
-                    currentThinkingBlock = messageElement;
-                    lastMessageType = 'thinking';
-                }
-            }
-            else if (type === 'thinking' && inThinkingMode) {
-                // Similar al caso 'content'
-                if (currentThinkingBlock) {
-                    if (message && message.trim()) {
-                        if (!currentThinkingBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
-                            currentThinkingBlock.textContent += ' ';
-                        }
-                        currentThinkingBlock.textContent += message;
-                    }
-                } else {
-                    messageElement = document.createElement('div');
-                    messageElement.className = 'thinking-message';
-                    messageElement.textContent = message;
-                    resultsLog.appendChild(messageElement);
-                    currentThinkingBlock = messageElement;
-                    lastMessageType = 'thinking';
-                }
-            }
-            else {
-                // Texto normal (resultado)
-                // Si estamos cambiando de tipo (después de un bloque de pensamiento)
-                if (lastMessageType !== 'result') {
-                    currentResultBlock = null;
-                    lastMessageType = 'result';
-                }
-                
-                // Añadir al bloque de resultado actual o crear uno nuevo
-                if (currentResultBlock) {
-                    if (message && message.trim()) {
-                        if (!currentResultBlock.textContent.endsWith(' ') && !message.startsWith(' ')) {
-                            currentResultBlock.textContent += ' ';
-                        }
-                        currentResultBlock.textContent += message;
-                    }
-                } else {
-                    messageElement = document.createElement('div');
-                    messageElement.className = 'result-message';
-                    messageElement.textContent = message;
-                    resultsLog.appendChild(messageElement);
-                    currentResultBlock = messageElement;
-                }
-            }
-            
-            // Desplazar hacia abajo para mostrar el mensaje más reciente
-            resultsLog.scrollTop = resultsLog.scrollHeight;
+
+        function replaceOptions(select, values) {
+            const previousIndex = Math.max(select.selectedIndex, 0);
+            select.replaceChildren(...values.map((value) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = value;
+                return option;
+            }));
+            select.selectedIndex = Math.min(previousIndex, values.length - 1);
         }
-        
-        // Eventos de Socket.IO
-        socket.on('connect', () => {
-            console.log('Conectado al servidor');
-        });
-        
-        // Actualización del estado de generación
-        socket.on('status_update', (data) => {
-            console.log('Estado actualizado:', data);
-            
-            // Actualizar información de estado
-            statusElement.textContent = data.current_step;
-            if (data.title) {
-                titleElement.textContent = data.title;
+
+        function applyLanguage(language) {
+            const previous = currentLanguage;
+            currentLanguage = language;
+            document.documentElement.lang = language;
+            document.querySelectorAll('[data-i18n]').forEach((element) => {
+                const value = copy[language][element.dataset.i18n];
+                if (value) element.textContent = value;
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+                const value = copy[language][element.dataset.i18nPlaceholder];
+                if (value) element.placeholder = value;
+            });
+            subject.placeholder = copy[language].subjectPlaceholder;
+            profile.placeholder = copy[language].profilePlaceholder;
+            if (!subject.dataset.edited || subject.value === samples[previous].subject) subject.value = samples[language].subject;
+            if (!profile.dataset.edited || profile.value === samples[previous].profile) profile.value = samples[language].profile;
+            replaceOptions(byId('style'), samples[language].styles);
+            replaceOptions(byId('genre'), samples[language].genres);
+            const refresh = byId('refresh-models');
+            refresh.title = copy[language].refreshTitle;
+            refresh.setAttribute('aria-label', copy[language].refreshTitle);
+            const manage = byId('manage-providers');
+            manage.title = copy[language].manageTitle;
+            manage.setAttribute('aria-label', copy[language].manageTitle);
+            const refreshVaults = byId('refresh-vaults');
+            refreshVaults.title = copy[language].refreshVaultsTitle;
+            refreshVaults.setAttribute('aria-label', copy[language].refreshVaultsTitle);
+            if (!modelSelect.value) setEmptyModels();
+            renderProviderList();
+        }
+
+        subject.addEventListener('input', () => { subject.dataset.edited = 'true'; });
+        profile.addEventListener('input', () => { profile.dataset.edited = 'true'; });
+        languageSelect.addEventListener('change', () => applyLanguage(languageSelect.value));
+        genreSelect.addEventListener('change', () => {
+            if (genreSelect.value === 'History' || genreSelect.value === 'Historia') {
+                agentToolsCheckbox.checked = true;
+                webSearchCheckbox.checked = true;
             }
-            
-            // Actualizar barra de progreso
-            progressBar.style.width = data.progress + '%';
-            progressText.textContent = data.progress + '%';
-            
-            // Añadir mensaje al log de resumen
-            addOverviewMessage(`> ${data.current_step}`);
-            
-            // Mostrar botón de descarga si el libro está listo
-            if (data.book_ready) {
-                downloadContainer.style.display = 'block';
-                downloadLink.href = '/download/' + data.file_path;
-                addOverviewMessage('> El libro está listo para descargar.');
-                addMessage('¡Libro completado! Puedes descargarlo ahora.', 'system');
+        });
+        agentToolsCheckbox.addEventListener('change', () => {
+            webSearchCheckbox.disabled = !agentToolsCheckbox.checked;
+            if (!agentToolsCheckbox.checked) webSearchCheckbox.checked = false;
+        });
+
+        async function requestJSON(url, options = {}) {
+            const response = await fetch(url, options);
+            let payload = {};
+            try { payload = await response.json(); } catch (_) { payload = {}; }
+            if (!response.ok) throw new Error(payload.error || payload.message || `${response.status} ${response.statusText}`);
+            return payload;
+        }
+
+        function setEmptyModels() {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = copy[currentLanguage].noModels;
+            option.disabled = true;
+            option.selected = true;
+            modelSelect.replaceChildren(option);
+            modelSelect.disabled = true;
+            generateButton.disabled = true;
+        }
+
+        function setModels(models, preferred = '') {
+            const current = modelSelect.value;
+            if (!models.length) {
+                setEmptyModels();
+                return;
             }
-            
-            // Manejar errores
-            if (data.error) {
-                addOverviewMessage(`> Error: ${data.error}`);
-                addMessage(`Error: ${data.error}`, 'error');
+            modelSelect.replaceChildren(...models.map((model) => {
+                const option = document.createElement('option');
+                option.value = model.name;
+                option.textContent = model.display_name;
+                return option;
+            }));
+            if (models.some((model) => model.name === current)) modelSelect.value = current;
+            else if (models.some((model) => model.name === preferred)) modelSelect.value = preferred;
+            modelSelect.disabled = false;
+            generateButton.disabled = generationBusy;
+        }
+
+        async function refreshModels(writeLog = true) {
+            const button = byId('refresh-models');
+            button.disabled = true;
+            try {
+                if (!providerSelect.value) throw new Error(copy[currentLanguage].noProviders);
+                const data = await requestJSON(`/models?provider=${encodeURIComponent(providerSelect.value)}`, {cache: 'no-store'});
+                setModels(data.models || [], data.selected_model || '');
+                if (writeLog) addLog(`${data.count || 0} ${copy[currentLanguage].modelsFound}`);
+            } catch (error) {
+                setEmptyModels();
+                if (writeLog) addLog(`${copy[currentLanguage].modelsError}: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        byId('refresh-models').addEventListener('click', () => refreshModels(true));
+        providerSelect.addEventListener('change', () => refreshModels(false));
+
+        async function refreshVaults(writeLog = true) {
+            const button = byId('refresh-vaults');
+            button.disabled = true;
+            const previous = sourceVaultSelect.value;
+            try {
+                const root = byId('output-path').value || './books';
+                const data = await requestJSON(`/vaults?root=${encodeURIComponent(root)}`, {cache: 'no-store'});
+                const empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = copy[currentLanguage].newVault;
+                sourceVaultSelect.replaceChildren(empty, ...(data.vaults || []).map((vault) => {
+                    const option = document.createElement('option');
+                    option.value = vault.path;
+                    option.textContent = `${vault.title} (${vault.drafted_count}/${vault.chapter_count})`;
+                    return option;
+                }));
+                if ([...sourceVaultSelect.options].some((option) => option.value === previous)) sourceVaultSelect.value = previous;
+                if (sourceVaultSelect.value) await refreshVaultBooks();
+                else vaultContextOptions.hidden = true;
+                if (writeLog) addLog(`${data.count || 0} ${copy[currentLanguage].vaultsFound}`);
+            } catch (error) {
+                if (writeLog) addLog(`${copy[currentLanguage].vaultsError}: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        byId('refresh-vaults').addEventListener('click', () => refreshVaults(true));
+        async function refreshVaultBooks() {
+            if (!sourceVaultSelect.value) {
+                sourceBookSelect.replaceChildren();
+                vaultContextOptions.hidden = true;
+                return;
+            }
+            try {
+                const data = await requestJSON(`/vault-books?vault=${encodeURIComponent(sourceVaultSelect.value)}`, {cache: 'no-store'});
+                sourceBookSelect.replaceChildren(...(data.books || []).map((book) => {
+                    const option = document.createElement('option');
+                    option.value = book.id;
+                    option.textContent = `${book.title} (${book.drafted_count}/${book.chapter_count})`;
+                    return option;
+                }));
+                vaultContextOptions.hidden = false;
+            } catch (error) {
+                vaultContextOptions.hidden = true;
+                addLog(`${copy[currentLanguage].booksError}: ${error.message}`, true);
+            }
+        }
+
+        sourceVaultSelect.addEventListener('change', refreshVaultBooks);
+        byId('output-path').addEventListener('change', () => refreshVaults(false));
+
+        async function loadProviders(preferred = '') {
+            const previous = preferred || providerSelect.value;
+            try {
+                const data = await requestJSON('/providers', {cache: 'no-store'});
+                providersCache = data.providers || [];
+                const available = providersCache.filter((provider) => provider.available);
+                providerSelect.replaceChildren(...providersCache.map((provider) => {
+                    const option = document.createElement('option');
+                    option.value = provider.id;
+                    option.textContent = `${provider.name} - ${provider.status}`;
+                    option.disabled = !provider.available;
+                    return option;
+                }));
+                if (!available.length) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = copy[currentLanguage].noProviders;
+                    option.disabled = true;
+                    option.selected = true;
+                    providerSelect.replaceChildren(option);
+                    providerSelect.disabled = true;
+                    setEmptyModels();
+                } else {
+                    providerSelect.disabled = false;
+                    const target = available.some((provider) => provider.id === previous)
+                        ? previous
+                        : (available.find((provider) => provider.id === 'ollama') || available[0]).id;
+                    providerSelect.value = target;
+                    await refreshModels(false);
+                }
+                renderProviderList();
+            } catch (error) {
+                addLog(`${copy[currentLanguage].modelsError}: ${error.message}`, true);
+                setEmptyModels();
+            }
+        }
+
+        function renderProviderList() {
+            const container = byId('provider-list');
+            if (!container) return;
+            container.replaceChildren(...providersCache.map((provider) => {
+                const row = document.createElement('div');
+                row.className = 'provider-row';
+                const details = document.createElement('div');
+                const name = document.createElement('strong');
+                name.textContent = provider.name;
+                const status = document.createElement('span');
+                status.className = provider.available ? 'provider-ready' : 'provider-unavailable';
+                status.textContent = `${provider.kind} / ${provider.status}`;
+                details.append(name, status);
+                const actions = document.createElement('div');
+                actions.className = 'provider-actions';
+                const testButton = document.createElement('button');
+                testButton.type = 'button';
+                testButton.className = 'small-command';
+                testButton.dataset.action = 'test';
+                testButton.dataset.provider = provider.id;
+                testButton.textContent = copy[currentLanguage].testConnection;
+                actions.appendChild(testButton);
+                if (provider.custom) {
+                    const deleteButton = document.createElement('button');
+                    deleteButton.type = 'button';
+                    deleteButton.className = 'small-command danger-command';
+                    deleteButton.dataset.action = 'delete';
+                    deleteButton.dataset.provider = provider.id;
+                    deleteButton.textContent = copy[currentLanguage].deleteProvider;
+                    actions.appendChild(deleteButton);
+                }
+                row.append(details, actions);
+                return row;
+            }));
+        }
+
+        const providerDialog = byId('provider-dialog');
+        byId('manage-providers').addEventListener('click', () => {
+            renderProviderList();
+            providerDialog.showModal();
+        });
+        byId('close-providers').addEventListener('click', () => providerDialog.close());
+        providerDialog.addEventListener('click', (event) => {
+            if (event.target === providerDialog) providerDialog.close();
+        });
+
+        byId('provider-kind').addEventListener('change', (event) => {
+            byId('provider-endpoint').value = event.target.value === 'anthropic'
+                ? 'https://api.anthropic.com/v1'
+                : 'https://api.openai.com/v1';
+        });
+
+        byId('provider-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const status = byId('provider-form-status');
+            status.className = 'form-status';
+            status.textContent = '';
+            try {
+                const payload = {
+                    name: byId('provider-name').value,
+                    kind: byId('provider-kind').value,
+                    base_url: byId('provider-endpoint').value,
+                    api_key: byId('provider-key').value,
+                    models: byId('provider-models').value
+                };
+                const data = await requestJSON('/providers', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+                });
+                status.textContent = copy[currentLanguage].providerSaved;
+                byId('provider-key').value = '';
+                await loadProviders(data.provider.id);
+            } catch (error) {
+                status.textContent = error.message;
+                status.className = 'form-status log-error';
             }
         });
-        
-        // Actualización de resultados
-        socket.on('result_update', (data) => {
-            console.log('Resultado:', data);
-            addMessage(data.data, 'result');
+
+        byId('provider-list').addEventListener('click', async (event) => {
+            const button = event.target.closest('button[data-action]');
+            if (!button) return;
+            button.disabled = true;
+            const status = byId('provider-form-status');
+            status.className = 'form-status';
+            try {
+                if (button.dataset.action === 'test') {
+                    const result = await requestJSON(`/providers/${encodeURIComponent(button.dataset.provider)}/test`, {method: 'POST'});
+                    status.textContent = result.message;
+                } else {
+                    await requestJSON(`/providers/${encodeURIComponent(button.dataset.provider)}`, {method: 'DELETE'});
+                    status.textContent = copy[currentLanguage].providerDeleted;
+                    await loadProviders();
+                }
+            } catch (error) {
+                status.textContent = error.message;
+                status.className = 'form-status log-error';
+            } finally {
+                button.disabled = false;
+            }
         });
-        
-        // Actualización de pensamiento del modelo
-        socket.on('thinking_update', (data) => {
-            console.log('Pensamiento:', data);
-            addMessage(data.data, data.type);
+
+        function renderState(state) {
+            const signature = JSON.stringify([state.status, state.current_step, state.progress, state.title, state.current_chapter, state.project_path, state.error, state.paused, state.cancel_requested]);
+            byId('status').textContent = state.current_step || (state.status === 'idle' ? copy[currentLanguage].waiting : state.status);
+            byId('title').textContent = state.title || '-';
+            byId('chapter').textContent = state.current_chapter ? `${state.current_chapter} / ${state.chapter_count || '?'}` : '-';
+            byId('project').textContent = state.project_path || '-';
+            const progress = Math.max(0, Math.min(Number(state.progress) || 0, 100));
+            byId('progress-bar').style.width = `${progress}%`;
+            byId('progress-text').textContent = `${progress}%`;
+            byId('download-container').classList.toggle('visible', Boolean(state.book_ready));
+            const busy = !['idle', 'complete', 'error', 'cancelled'].includes(state.status);
+            generationBusy = busy;
+            generateButton.disabled = busy || !providerSelect.value || !modelSelect.value;
+            generationControls.hidden = !busy;
+            pauseButton.textContent = state.paused ? copy[currentLanguage].resume : copy[currentLanguage].pause;
+            pauseButton.dataset.paused = state.paused ? 'true' : 'false';
+            pauseButton.disabled = Boolean(state.cancel_requested);
+            cancelButton.disabled = Boolean(state.cancel_requested);
+            if (signature !== lastStateSignature && state.current_step && activityEndpointAvailable !== true) {
+                addLog(state.current_step, Boolean(state.error));
+            }
+            if (busy && !generationStartedAt) generationStartedAt = Date.now();
+            if (!busy) generationStartedAt = null;
+            lastStateSignature = signature;
+        }
+
+        async function pollStatus() {
+            try {
+                renderState(await requestJSON('/status', {cache: 'no-store'}));
+            } catch (error) {
+                const message = `${copy[currentLanguage].connectionLost}: ${error.message}`;
+                const signature = `status-error:${message}`;
+                if (lastStateSignature !== signature) addLog(message, true);
+                lastStateSignature = signature;
+            }
+        }
+
+        async function pollActivity() {
+            try {
+                const data = await requestJSON(`/activity?after=${lastActivitySequence}&limit=250`, {cache: 'no-store'});
+                activityEndpointAvailable = true;
+                for (const event of data.events || []) {
+                    const source = event.source ? `[${event.source}] ` : '';
+                    addLog(`${source}${event.message}`, event.kind === 'error', event.kind || 'info', event.timestamp);
+                    lastActivitySequence = Math.max(lastActivitySequence, Number(event.sequence) || 0);
+                }
+                if (data.has_more) await pollActivity();
+            } catch (error) {
+                activityEndpointAvailable = false;
+                if (generationBusy && Date.now() - lastVisibleActivity >= 10_000) {
+                    const elapsed = generationStartedAt ? Math.floor((Date.now() - generationStartedAt) / 1000) : 0;
+                    addLog(`${copy[currentLanguage].stillActive} (${elapsed}s)`, false, 'heartbeat');
+                }
+            }
+        }
+
+        byId('generate-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!modelSelect.value) return;
+            logElement.replaceChildren();
+            lastVisibleActivity = Date.now();
+            generationStartedAt = Date.now();
+            byId('download-container').classList.remove('visible');
+            const payload = {
+                subject: subject.value, profile: profile.value, style: byId('style').value,
+                genre: byId('genre').value, provider: providerSelect.value,
+                model: modelSelect.value, language: currentLanguage,
+                outputFormat: byId('output-format').value,
+                outputPath: byId('output-path').value || './books', agentTools: agentToolsCheckbox.checked,
+                webSearch: agentToolsCheckbox.checked && webSearchCheckbox.checked
+                , sourceVault: sourceVaultSelect.value, sourceBook: sourceVaultSelect.value ? sourceBookSelect.value : ''
+                , vaultMode: sourceVaultSelect.value ? vaultModeSelect.value : 'new'
+            };
+            addLog(`${copy[currentLanguage].starting} ${payload.provider}:${payload.model}.`);
+            generateButton.disabled = true;
+            generateButton.textContent = copy[currentLanguage].generating;
+            try {
+                await requestJSON('/generate', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+                });
+                await pollStatus();
+                await pollActivity();
+            } catch (error) {
+                addLog(`${copy[currentLanguage].requestError}: ${error.message}`, true);
+                generateButton.disabled = false;
+            } finally {
+                generateButton.textContent = copy[currentLanguage].generate;
+            }
         });
+
+        pauseButton.addEventListener('click', async () => {
+            const paused = pauseButton.dataset.paused === 'true';
+            pauseButton.disabled = true;
+            try {
+                await requestJSON(paused ? '/generation/resume' : '/generation/pause', {method: 'POST'});
+                await pollStatus();
+            } catch (error) {
+                addLog(`${copy[currentLanguage].pauseError}: ${error.message}`, true);
+            } finally {
+                pauseButton.disabled = false;
+            }
+        });
+
+        cancelButton.addEventListener('click', async () => {
+            cancelButton.disabled = true;
+            try {
+                await requestJSON('/generation/cancel', {method: 'POST'});
+                await pollStatus();
+            } catch (error) {
+                addLog(`${copy[currentLanguage].cancelError}: ${error.message}`, true);
+                cancelButton.disabled = false;
+            }
+        });
+
+        byId('guidance-form').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const input = byId('guidance-message');
+            const message = input.value.trim();
+            if (!message) return;
+            const button = byId('guidance-send');
+            button.disabled = true;
+            try {
+                await requestJSON('/guidance', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message})
+                });
+                input.value = '';
+                addLog(`${copy[currentLanguage].guidanceSent}: ${message}`, false, 'guidance');
+            } catch (error) {
+                addLog(`${copy[currentLanguage].guidanceError}: ${error.message}`, true);
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        function startMatrixBackground() {
+            const canvas = byId('matrix-background');
+            const context = canvas.getContext('2d');
+            const characters = '01{}[]<>/\\*+#BOOKWIKI';
+            const fontSize = 15;
+            let columns = 0;
+            let drops = [];
+            let pointerX = -1000;
+            let pointerY = -1000;
+            let previousFrame = 0;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            function resize() {
+                const ratio = Math.min(window.devicePixelRatio || 1, 2);
+                canvas.width = Math.floor(window.innerWidth * ratio);
+                canvas.height = Math.floor(window.innerHeight * ratio);
+                canvas.style.width = `${window.innerWidth}px`;
+                canvas.style.height = `${window.innerHeight}px`;
+                context.setTransform(ratio, 0, 0, ratio, 0, 0);
+                columns = Math.ceil(window.innerWidth / fontSize);
+                drops = Array.from({length: columns}, () => Math.random() * -40);
+            }
+
+            function draw(timestamp) {
+                if (!reducedMotion && timestamp - previousFrame < 52) {
+                    requestAnimationFrame(draw);
+                    return;
+                }
+                previousFrame = timestamp;
+                context.fillStyle = 'rgba(5, 8, 7, 0.12)';
+                context.fillRect(0, 0, window.innerWidth, window.innerHeight);
+                context.font = `${fontSize}px ui-monospace, monospace`;
+                for (let index = 0; index < columns; index += 1) {
+                    const x = index * fontSize;
+                    const y = drops[index] * fontSize;
+                    const distance = Math.hypot(x - pointerX, y - pointerY);
+                    context.fillStyle = distance < 150 ? '#9dffd0' : (index % 7 === 0 ? '#48c9d8' : '#2f9d6c');
+                    context.fillText(characters[Math.floor(Math.random() * characters.length)], x, y);
+                    if (y > window.innerHeight + 40 && Math.random() > 0.972) drops[index] = Math.random() * -20;
+                    drops[index] += reducedMotion ? 0 : 0.72;
+                }
+                if (!reducedMotion) requestAnimationFrame(draw);
+            }
+
+            window.addEventListener('resize', resize);
+            window.addEventListener('pointermove', (event) => { pointerX = event.clientX; pointerY = event.clientY; });
+            window.addEventListener('pointerleave', () => { pointerX = -1000; pointerY = -1000; });
+            resize();
+            draw(0);
+        }
+
+        applyLanguage('en');
+        loadProviders();
+        refreshVaults(false);
+        pollStatus();
+        pollActivity();
+        setInterval(pollStatus, 1000);
+        setInterval(pollActivity, 1000);
+        startMatrixBackground();
     </script>
 </body>
 </html>

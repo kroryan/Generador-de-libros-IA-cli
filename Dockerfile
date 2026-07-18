@@ -1,31 +1,30 @@
 FROM python:3.11-slim
 
-# Instalar dependencias del sistema necesarias para algunas librerías
+# Install native build dependencies.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential libxml2 libxml2-dev libxslt1-dev libffi-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Establecer directorio de trabajo
+# Application working directory.
 WORKDIR /app
 
-# Copiar archivos de requerimientos primero para aprovechar cache de Docker
+# Copy dependencies first to preserve the build cache.
 COPY requirements.txt ./
 
-# Instalar dependencias de Python
+# Install Python dependencies.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el resto del proyecto
+# Copy the application.
 COPY . /app
 
-# Crear directorio docs y usuario no root para ejecutar la app
-RUN mkdir -p /app/docs
+# Run as a non-root user and retain generated projects in /app/books.
+RUN mkdir -p /app/books
 RUN useradd -m appuser || true
 RUN chown -R appuser:appuser /app
 USER appuser
 
-# Puerto por defecto usado por la app
+# Web interface port.
 EXPOSE 5000
 
-# No incluir .env en la imagen; el usuario debe montar uno en tiempo de ejecución
-# Comando por defecto para ejecutar la interfaz web
+# Mount .env at runtime; never bake secrets into the image.
 CMD ["python", "src/app.py", "--web"]

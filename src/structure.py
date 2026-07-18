@@ -1,180 +1,174 @@
-from utils import BaseStructureChain, print_progress, clean_think_tags
+"""Generate the title, narrative framework, and chapter outline."""
+
+from language import get_language, language_instruction, normalize_language
+from utils import (
+    BaseStructureChain,
+    clean_think_tags,
+    extract_content_from_llm_response,
+    print_progress,
+)
+
 
 class TitleChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
-    Genera un título atractivo y original para esta novela de fantasía y ciencia ficción.
-    El título debe capturar la esencia de la historia y ser memorable.
-    Devuelve solo el título, sin explicaciones adicionales.
-    IMPORTANTE: El título debe estar EXCLUSIVAMENTE en español. No uses palabras en otros idiomas.
+Create an original, memorable title for the requested book. Capture its central promise,
+genre, and tone. Return only the title without quotation marks or commentary.
+{language_instruction}
 
-    Tema del libro: {subject}
-    Género del libro: {genre}
-    Estilo: {style}
-    Perfil del libro: {profile}
+Subject: {subject}
+Genre: {genre}
+Style: {style}
+Reader/profile brief: {profile}
 
-    Título:"""
+Title:
+"""
 
-    def run(self, subject, genre, style, profile):
-        print_progress("Generando título...")
-        return self.invoke(
-            subject=clean_think_tags(subject),
-            genre=clean_think_tags(genre),
-            style=clean_think_tags(style),
-            profile=clean_think_tags(profile)
-        )
-
-class FrameworkChain(BaseStructureChain):
-    PROMPT_TEMPLATE = """
-    Genera el marco narrativo para esta novela de fantasía y ciencia ficción.
-    El marco debe ser claro y específico, incluyendo:
-    1. El conflicto principal de la historia
-    2. Los elementos mágicos y tecnológicos más importantes
-    3. Los personajes principales y sus motivaciones
-    4. La estructura general de la trama
-    5. Los temas principales a explorar
-    IMPORTANTE: Todo el contenido debe estar EXCLUSIVAMENTE en español. Todos los nombres de personajes, 
-    lugares, elementos mágicos y tecnológicos deben estar en español o ser adaptados al español.
-
-    Tema: {subject}
-    Género: {genre}
-    Estilo: {style}
-    Título: {title}
-    Perfil del libro: {profile}
-
-    Marco narrativo:"""
-
-    def run(self, subject, genre, style, profile, title):
-        print_progress("Generando marco narrativo...")
+    def run(self, subject, genre, style, profile, language="en"):
+        print_progress("Generating title...")
         return self.invoke(
             subject=clean_think_tags(subject),
             genre=clean_think_tags(genre),
             style=clean_think_tags(style),
             profile=clean_think_tags(profile),
-            title=clean_think_tags(title)
+            language_instruction=language_instruction(language),
+        ).strip().strip('"')
+
+
+class FrameworkChain(BaseStructureChain):
+    PROMPT_TEMPLATE = """
+Create a specific long-form framework appropriate to this book's genre. For fiction,
+define setting rules, characters, motivations, causal plot movement, stakes, and themes.
+For nonfiction, define thesis, scope, chronology or conceptual progression, key people and
+institutions, evidence standards, competing interpretations, reader outcomes, and source
+requirements. Establish only facts later steps may safely treat as canonical; explicitly
+mark claims that require research. Do not draft chapters or invent facts, quotations, or sources.
+{language_instruction}
+
+Subject: {subject}
+Genre: {genre}
+Style: {style}
+Title: {title}
+Reader/profile brief: {profile}
+
+The selected genre controls factuality: History/Historia requires sourced, qualified factual
+claims; Historical fiction/Ficcion historica preserves credible period facts without losing
+its freedom to invent story material.
+
+Book framework:
+"""
+
+    def run(self, subject, genre, style, profile, title, language="en"):
+        print_progress("Generating narrative framework...")
+        return self.invoke(
+            subject=clean_think_tags(subject),
+            genre=clean_think_tags(genre),
+            style=clean_think_tags(style),
+            profile=clean_think_tags(profile),
+            title=clean_think_tags(title),
+            language_instruction=language_instruction(language),
         )
+
 
 class ChaptersChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
-    Genera una lista de capítulos para esta novela.
-    La lista debe incluir un prólogo, 7-9 capítulos numerados y un epílogo.
-    Usa exactamente este formato:
-    Prólogo: [breve descripción]
-    Capítulo 1: [breve descripción]
-    ...
-    Epílogo: [breve descripción]
-    IMPORTANTE: Los títulos y descripciones de TODOS los capítulos deben estar EXCLUSIVAMENTE en español. 
-    Todos los nombres, lugares y conceptos mencionados deben estar en español.
+Create a 9-14 entry chapter outline appropriate to the genre. For fiction, use a localized
+prologue when useful, numbered chapters, and an epilogue when useful. For nonfiction, use
+{introduction_label}, numbered {chapter_label} entries, and {conclusion_label}. Use exactly
+one line per entry and exactly this delimiter: " | ". Each description must state how the
+story, argument, chronology, evidence, or reader understanding materially advances.
+{language_instruction}
 
-    Tema: {subject}
-    Género: {genre}
-    Estilo: {style}
-    Título: {title}
-    Perfil: {profile}
-    Marco: {framework}
+Subject: {subject}
+Genre: {genre}
+Style: {style}
+Title: {title}
+Reader/profile brief: {profile}
+Narrative framework: {framework}
+Canonical pre-planning bible and wiki context:
+{book_bible}
 
-    Lista de capítulos:"""
+Chapter outline:
+"""
 
-    def run(self, subject, genre, style, title, profile, framework):
-        print_progress("Generando lista de capítulos...")
+    def run(self, subject, genre, style, profile, title, framework, language="en", book_bible=""):
+        print_progress("Generating chapter outline...")
+        spec = get_language(language)
         response = self.invoke(
             subject=clean_think_tags(subject),
             genre=clean_think_tags(genre),
             style=clean_think_tags(style),
             title=clean_think_tags(title),
             profile=clean_think_tags(profile),
-            framework=clean_think_tags(framework)
+            framework=clean_think_tags(framework),
+            book_bible=clean_think_tags(book_bible or "Use the narrative framework as canon."),
+            language_instruction=language_instruction(language),
+            prologue_label=spec.prologue,
+            chapter_label=spec.chapter,
+            epilogue_label=spec.epilogue,
+            introduction_label="Introduccion" if spec.code == "es" else "Introduction",
+            conclusion_label="Conclusion" if spec.code == "es" else "Conclusion",
         )
-        return self.parse(response)
+        return self.parse(response, language)
 
-    def parse(self, response):
-        if not response:
-            raise ValueError("No se generó contenido para los capítulos")
-            
-        # Asegurar que el response sea una cadena de texto
+    def parse(self, response, language="en"):
         if not isinstance(response, str):
             response = extract_content_from_llm_response(response)
-            if not response:
-                raise ValueError("No se pudo extraer contenido válido de la respuesta del modelo")
-                
-        # El response ya viene limpio de clean_think_tags por el invoke()
-        try:
-            chapter_list = [line.strip() for line in response.split('\n') if ':' in line]
-            if not chapter_list:
-                raise ValueError("No se generaron capítulos válidos")
-                
-            chapter_dict = {}
-            for chapter in chapter_list:
-                name, description = chapter.split(':', 1)
-                chapter_dict[name.strip()] = description.strip()
-            return chapter_dict
-            
-        except Exception as e:
-            print_progress(f"Error al procesar los capítulos: {str(e)}")
-            print_progress("Intentando recuperar estructura básica...")
-            
-            # Intentar recuperar al menos algunos capítulos en caso de error
-            chapter_dict = {}
-            try:
-                # Buscar cualquier línea que pueda contener un capítulo
-                lines = response.split('\n')
-                chapter_count = 1
-                
-                for line in lines:
-                    line = line.strip()
-                    if line and (':' in line or 'capítulo' in line.lower() or 'prólogo' in line.lower() or 'epílogo' in line.lower()):
-                        if ':' in line:
-                            name, desc = line.split(':', 1)
-                            chapter_dict[name.strip()] = desc.strip()
-                        else:
-                            chapter_dict[line] = "Desarrollo de la trama principal."
-                    
-                # Si aún no se han recuperado capítulos, crear estructura mínima
-                if not chapter_dict:
-                    chapter_dict["Prólogo"] = "Introducción a la historia y personajes principales."
-                    for i in range(1, 6):
-                        chapter_dict[f"Capítulo {i}"] = f"Desarrollo de la trama principal - parte {i}."
-                    chapter_dict["Epílogo"] = "Conclusión de la historia."
-                    
-                return chapter_dict
-                
-            except Exception as nested_e:
-                print_progress(f"Error en la recuperación de emergencia: {str(nested_e)}")
-                # Estructura mínima en caso de error total
-                return {
-                    "Prólogo": "Introducción a la historia.",
-                    "Capítulo 1": "Desarrollo inicial.",
-                    "Capítulo 2": "Desarrollo medio.",
-                    "Capítulo 3": "Clímax.",
-                    "Epílogo": "Conclusión."
-                }
+        if not response:
+            raise ValueError("The model returned an empty chapter outline")
 
-def get_structure(subject, genre, style, profile):
-    print_progress("Iniciando generación de estructura...")
-    
-    try:
-        # Limpiar las entradas iniciales
-        subject = clean_think_tags(subject)
-        genre = clean_think_tags(genre)
-        style = clean_think_tags(style)
-        profile = clean_think_tags(profile)
-        
-        # Generar título
-        title_chain = TitleChain()
-        title = title_chain.run(subject, genre, style, profile)
-        print_progress(f"Título generado: {title}")
-        
-        # Generar marco
-        framework_chain = FrameworkChain()
-        framework = framework_chain.run(subject, genre, style, profile, title)
-        print_progress("Marco narrativo generado")
-        
-        # Generar capítulos
-        chapters_chain = ChaptersChain()
-        chapter_dict = chapters_chain.run(subject, genre, style, profile, title, framework)
-        print_progress(f"Lista de {len(chapter_dict)} capítulos generada")
-        
-        return title, framework, chapter_dict
-        
-    except Exception as e:
-        print_progress(f"Error en la generación de la estructura: {str(e)}")
-        raise
+        chapters = {}
+        for raw_line in response.splitlines():
+            line = raw_line.strip().lstrip("-*0123456789. ")
+            if " | " in line:
+                name, description = line.split(" | ", 1)
+            elif ":" in line:
+                name, description = line.split(":", 1)
+            else:
+                continue
+            if name.strip() and description.strip():
+                chapters[name.strip()] = description.strip()
+        if chapters:
+            return chapters
+
+        spec = get_language(language)
+        introduction = "Introduccion" if spec.code == "es" else "Introduction"
+        conclusion = "Conclusion"
+        fallback = {introduction: "Define the book's central promise, scope, and organizing question."}
+        fallback.update(
+            {f"{spec.chapter} {index}": f"Advance the story, argument, or evidence through consequential step {index}." for index in range(1, 8)}
+        )
+        fallback[conclusion] = "Synthesize the central outcome, implications, and remaining questions."
+        return fallback
+
+
+def get_foundation(subject, genre, style, profile, language="en", on_stage=None):
+    language = normalize_language(language)
+    print_progress("Generating the pre-planning book foundation...")
+    title = TitleChain().run(subject, genre, style, profile, language)
+    if on_stage:
+        on_stage("title", title)
+    framework = FrameworkChain().run(subject, genre, style, profile, title, language)
+    if on_stage:
+        on_stage("framework", framework)
+    return title, framework
+
+
+def get_chapter_outline(subject, genre, style, profile, title, framework, book_bible, language="en"):
+    language = normalize_language(language)
+    print_progress("Planning chapters from the canonical vault context...")
+    chapters = ChaptersChain().run(
+        subject, genre, style, profile, title, framework, language, book_bible=book_bible
+    )
+    print_progress(f"Generated an outline with {len(chapters)} chapters")
+    return chapters
+
+
+def get_structure(subject, genre, style, profile, language="en", on_stage=None):
+    """Compatibility helper; the canonical pipeline uses the two pre/post-bible steps."""
+    title, framework = get_foundation(subject, genre, style, profile, language, on_stage)
+    chapters = get_chapter_outline(
+        subject, genre, style, profile, title, framework, framework, language
+    )
+    if on_stage:
+        on_stage("outline", chapters)
+    return title, framework, chapters

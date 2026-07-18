@@ -40,7 +40,8 @@ class SectionQualityMonitor:
         section_position: str,
         context: str,
         idea: str,
-        book_title: str
+        book_title: str,
+        language: str = "es",
     ) -> Optional[float]:
         """
         Evalúa una sección y la almacena si supera el umbral de calidad.
@@ -79,7 +80,8 @@ class SectionQualityMonitor:
                     idea=idea[:150] if idea else "",           # Limitar idea a 150 chars
                     quality_score=quality_score,
                     created_at=datetime.now().isoformat(),
-                    book_title=book_title
+                    book_title=book_title,
+                    language=language,
                 )
                 
                 self.example_library.add_example(example)
@@ -126,7 +128,8 @@ class SectionQualityMonitor:
         section_position: str,
         context: str,
         idea: str,
-        book_title: str
+        book_title: str,
+        language: str = "es",
     ) -> bool:
         """
         Fuerza el guardado de una sección independientemente del score.
@@ -148,7 +151,8 @@ class SectionQualityMonitor:
                 idea=idea[:150] if idea else "",
                 quality_score=quality_score,
                 created_at=datetime.now().isoformat(),
-                book_title=book_title
+                book_title=book_title,
+                language=language,
             )
             
             self.example_library.add_example(example)

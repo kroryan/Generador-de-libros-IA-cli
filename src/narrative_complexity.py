@@ -6,13 +6,15 @@ Analiza elementos narrativos para determinar cuánto contexto necesita la histor
 import re
 from typing import Set, Dict, List, Optional
 from logging_config import get_logger
+from language import normalize_language
 
 logger = get_logger("narrative_complexity")
 
 class NarrativeComplexityAnalyzer:
     """Analiza complejidad narrativa para ajustar contexto"""
     
-    def __init__(self):
+    def __init__(self, language="en"):
+        self.language = normalize_language(language)
         self.entities = {
             "characters": set(),
             "locations": set(),
@@ -28,7 +30,10 @@ class NarrativeComplexityAnalyzer:
             "Desde", "Durante", "Mientras", "Aunque", "Cuando", "Donde", "Como",
             "Si", "No", "Sí", "Muy", "Más", "Menos", "Tanto", "Todo", "Todos",
             "Esta", "Este", "Estos", "Estas", "Ese", "Esa", "Esos", "Esas",
-            "Aquí", "Ahí", "Allí", "Ahora", "Después", "Antes", "Luego", "Ya"
+            "Aquí", "Ahí", "Allí", "Ahora", "Después", "Antes", "Luego", "Ya",
+            "The", "A", "An", "In", "On", "At", "With", "Without", "From", "To",
+            "For", "But", "And", "Or", "When", "Where", "While", "After", "Before",
+            "This", "That", "These", "Those", "He", "She", "They", "It"
         }
         
         # Patrones para detectar elementos narrativos
@@ -44,13 +49,17 @@ class NarrativeComplexityAnalyzer:
         self.action_patterns = [
             r'\b(corrió|caminó|miró|vio|escuchó|sintió|pensó|dijo|gritó|susurró)\b',
             r'\b(abrió|cerró|tomó|dejó|encontró|perdió|buscó|halló)\b',
-            r'\b(llegó|partió|entró|salió|subió|bajó|avanzó|retrocedió)\b'
+            r'\b(llegó|partió|entró|salió|subió|bajó|avanzó|retrocedió)\b',
+            r'\b(ran|walked|looked|saw|heard|felt|thought|said|shouted|whispered)\b',
+            r'\b(opened|closed|took|left|found|lost|searched|arrived|entered|advanced)\b'
         ]
         
         self.emotion_patterns = [
             r'\b(feliz|triste|enojado|nervioso|preocupado|emocionado|asustado)\b',
             r'\b(alegría|tristeza|ira|miedo|amor|odio|esperanza|desesperación)\b',
-            r'\b(sonrió|lloró|suspiró|tembló|se estremeció|se ruborizó)\b'
+            r'\b(sonrió|lloró|suspiró|tembló|se estremeció|se ruborizó)\b',
+            r'\b(happy|sad|angry|nervous|worried|excited|afraid|hope|fear|love|grief)\b',
+            r'\b(smiled|cried|sighed|trembled|flinched|blushed)\b'
         ]
     
     def analyze_section(self, text: str, section_number: int = None) -> Dict[str, any]:
@@ -141,7 +150,8 @@ class NarrativeComplexityAnalyzer:
             r'\bdesde\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
             r'\bhacia\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
             r'\bla\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
-            r'\bel\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)'
+            r'\bel\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)',
+            r'\b(?:in|at|from|toward|inside)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         ]
         
         locations = set()
@@ -162,7 +172,10 @@ class NarrativeComplexityAnalyzer:
             rf'\b{name}\s+(caminó|corrió|se\s+dirigió|se\s+acercó)',
             rf'(dijo|respondió)\s+{name}',
             rf'\b{name}\s+(estaba|era|tenía|llevaba)',
-            rf'(el|la)\s+{name}(?:\s|$|\.)'  # "el Juan", "la María"
+            rf'(el|la)\s+{name}(?:\s|$|\.)',
+            rf'\b{name}\s+(said|replied|thought|felt|saw|heard|walked|ran)',
+            rf'(said|replied|asked)\s+{name}',
+            rf'\b{name}\s+(was|had|wore|carried)'
         ]
         
         for pattern in character_patterns:

@@ -38,4 +38,5 @@ def modify(docx_file):
     )
 
 
-modify("./docs/book_1_GPT3.docx")
+if __name__ == "__main__":
+    modify("./books/book_1_GPT3.docx")

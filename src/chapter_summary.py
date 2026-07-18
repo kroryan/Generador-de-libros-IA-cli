@@ -6,7 +6,7 @@ from langchain.chains import LLMChain
 from language import language_instruction, normalize_language
 
 # Importar el sistema unificado de contexto
-from unified_context import UnifiedContextManager, ContextMode
+from unified_context import UnifiedContextManager
 
 # Alias para compatibilidad con código existente
 ProgressiveContextManager = UnifiedContextManager

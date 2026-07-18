@@ -1,3 +1,6 @@
+import re
+
+
 class ContentAnalyzer:
     """
     Sistema simplificado para analizar texto generado.
@@ -33,7 +36,6 @@ class ContentAnalyzer:
     
     def _normalize_text(self, text):
         """Normaliza el texto para análisis, eliminando espacios extra y caracteres especiales"""
-        import re
         # Eliminar espacios en blanco extra
         normalized = re.sub(r'\s+', ' ', text)
         # Normalizar saltos de línea
@@ -47,7 +49,6 @@ class ContentAnalyzer:
         Returns:
             dict: Análisis detallado con métricas básicas
         """
-        import re
         # Limpieza básica
         clean_text = self._normalize_text(text)
         words = re.findall(r'\b\w+\b', clean_text.lower())

@@ -13,7 +13,7 @@ Características:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, List
 import os
 import logging
 from enum import Enum

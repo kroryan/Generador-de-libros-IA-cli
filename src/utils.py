@@ -1,5 +1,4 @@
 from langchain.chains import LLMChain
-from langchain_community.chat_models import ChatOllama
 from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
@@ -14,11 +13,9 @@ from generation_control import generation_control
 from guidance import guidance_manager
 
 # Importar nuevos módulos de infraestructura
-from retry_strategy import RetryStrategy, with_retry
-from circuit_breaker import CircuitBreaker, CircuitBreakerRegistry, with_circuit_breaker
-from emergency_prompts import emergency_prompts
-from logging_config import get_logger, print_progress
-from model_profiles import model_profile_manager, detect_model_size as new_detect_model_size
+from retry_strategy import RetryStrategy
+from logging_config import get_logger
+from model_profiles import detect_model_size as new_detect_model_size
 
 # Logger para este módulo
 logger = get_logger("utils")

@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import traceback
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
@@ -426,14 +427,22 @@ def _generate_book(generation_request: BookGenerationRequest, model: str) -> Non
         )
         activity_log.emit(str(error), kind="warning", source="pipeline")
     except Exception as error:
+        error_summary = f"{type(error).__name__}: {error}"
+        error_traceback = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        ).strip()
+        print(error_traceback, file=sys.stderr, flush=True)
         current = state_manager.get_state()
         state_manager.update_state(
             status=GenerationStatus.ERROR,
-            current_step=f"Generation failed: {error}",
+            current_step=f"Generation failed: {error_summary}",
             progress=current.progress,
-            error=str(error),
+            error=error_summary,
         )
-        activity_log.emit(f"Generation failed: {error}", kind="error", source="pipeline")
+        activity_log.emit(
+            f"Generation failed: {error_summary}", kind="error", source="pipeline"
+        )
+        activity_log.emit(error_traceback, kind="debug", source="traceback")
     finally:
         guidance_manager.finish_generation()
         _generation_lock.release()

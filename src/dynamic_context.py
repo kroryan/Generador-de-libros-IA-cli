@@ -6,7 +6,7 @@ Reemplaza límites estáticos con cálculos adaptativos basados en:
 - Calidad de resúmenes
 """
 
-from typing import Dict, Optional
+from typing import Dict
 from dataclasses import dataclass
 from logging_config import get_logger
 

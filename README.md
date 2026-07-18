@@ -231,9 +231,11 @@ Configuration options and provider variables are documented in [`.env.example`](
 
 ```bash
 python -m pytest -q
+python -m pyflakes src
 ```
 
-The graph/storage tests can also run directly:
+The static check catches undefined names and invalid imports before a generation reaches
+an incremental callback. The graph/storage tests can also run directly:
 
 ```bash
 python tests/test_obsidian_pipeline.py

@@ -14,7 +14,7 @@ from language import normalize_language
 from obsidian_vault import ObsidianVaultWriter, VaultProject
 from publishing import VaultPublisher
 from novelist_agent import NovelistAgent
-from pipeline import BookGenerationPipeline, BookGenerationRequest
+from pipeline import BookGenerationPipeline, BookGenerationRequest, _checkpoint_name
 
 
 class StubAgentLLM:
@@ -251,6 +251,13 @@ class ObsidianPipelineTests(unittest.TestCase):
 
         def bible(*args, **kwargs):
             events.append("bible")
+            kwargs["on_volume"](
+                1,
+                1,
+                "Core Canon & Continuity",
+                "Canonical bible.",
+                [("Core Canon & Continuity", "Canonical bible.")],
+            )
             return "Canonical bible."
 
         def wiki(*args, **kwargs):
@@ -278,6 +285,12 @@ class ObsidianPipelineTests(unittest.TestCase):
         ), patch("pipeline.get_ideas", side_effect=plans), patch("pipeline.write_book", side_effect=draft):
             BookGenerationPipeline().run(request)
         self.assertEqual(events, ["bible", "wiki", "outline", "plans", "draft"])
+        checkpoints = list(output.glob("*/.bookgen/checkpoints/bible-01-core-canon-continuity.md"))
+        self.assertEqual(len(checkpoints), 1)
+
+    def test_checkpoint_name_normalizes_unicode_and_symbols(self):
+        self.assertEqual(_checkpoint_name("  Núcleo & Continuidad  "), "núcleo-continuidad")
+        self.assertEqual(_checkpoint_name("***"), "item")
 
     def test_revision_mode_loads_selected_manuscript_and_creates_brief(self):
         output = self.root / "revisions"

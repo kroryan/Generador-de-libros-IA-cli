@@ -166,7 +166,11 @@ Codex y Claude Code trabajan con esa carpeta como directorio.
 
 ```bash
 python -m pytest -q
+python -m pyflakes src
 ```
+
+La comprobacion estatica detecta nombres indefinidos e imports invalidos antes de que una
+generacion llegue a un callback incremental.
 
 Consulta [`.env.example`](.env.example) para la
 configuracion completa. No guardes claves API en el repositorio.

@@ -13,7 +13,7 @@ Características:
 """
 
 from enum import Enum, auto
-from typing import List, Optional, Tuple
+from typing import Optional
 from dataclasses import dataclass
 import re
 import os
@@ -224,7 +224,7 @@ class TextSegmentExtractor:
         end_segment = text[end_start:]
         
         result = f"INICIO DEL CAPÍTULO:\n{start_segment}"
-        result += f"\n\n[...CONTENIDO OMITIDO...]\n\n"
+        result += "\n\n[...CONTENIDO OMITIDO...]\n\n"
         result += f"FINAL DEL CAPÍTULO:\n{end_segment}"
         
         return result

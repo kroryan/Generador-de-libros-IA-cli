@@ -7,7 +7,6 @@ import json
 import os
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
-from pathlib import Path
 from logging_config import get_logger
 
 logger = get_logger("model_profiles")

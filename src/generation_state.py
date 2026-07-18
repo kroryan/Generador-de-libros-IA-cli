@@ -6,7 +6,7 @@ thread-safe basado en dataclasses inmutables y el patrón Observer.
 """
 
 from dataclasses import dataclass, field, replace
-from typing import Optional, List, Callable
+from typing import Optional, List
 from enum import Enum
 from threading import Lock
 from datetime import datetime

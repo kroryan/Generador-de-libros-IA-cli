@@ -13,8 +13,8 @@ Características:
 """
 
 from enum import Enum, auto
-from typing import List, Optional, Dict, Any, Tuple
-from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass
 import re
 import os
 import json

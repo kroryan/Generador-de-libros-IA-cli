@@ -231,7 +231,7 @@ class ProviderRegistry:
             client_class=defaults.get("client_class")
         )
         
-        logger.debug(f"DEBUG: config creado")
+        logger.debug("Provider config created")
         
         is_configured = config.is_configured()
         logger.debug(f"DEBUG: is_configured = {is_configured}")

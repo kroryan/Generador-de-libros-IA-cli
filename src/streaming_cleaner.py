@@ -10,10 +10,9 @@ Reemplaza la lógica manual de detección de tags en OutputCapture.
 """
 
 import os
-import re
 from enum import Enum
-from typing import Tuple, Optional, Callable, List
-from text_cleaning import clean_ansi_codes, clean_think_tags
+from typing import Tuple, Optional, Callable
+from text_cleaning import clean_ansi_codes
 
 
 class StreamState(Enum):

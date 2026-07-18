@@ -4,7 +4,7 @@ Evalúa la efectividad de los resúmenes para ajustar la agresividad de compresi
 """
 
 import re
-from typing import Set, Dict, List, Optional, Tuple
+from typing import Set, Dict, List, Optional
 from logging_config import get_logger
 
 logger = get_logger("summary_quality")

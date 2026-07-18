@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from provider_registry import ProviderConfig, provider_registry
+from provider_registry import provider_registry
 from circuit_breaker import CircuitBreaker, CircuitBreakerRegistry, CircuitBreakerOpenException
 
 logger = logging.getLogger(__name__)

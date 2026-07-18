@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from html import escape
-import os
 from pathlib import Path
 import re
 import shutil

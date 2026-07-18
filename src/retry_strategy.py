@@ -7,7 +7,7 @@ import time
 import random
 import os
 from enum import Enum
-from typing import Any, Callable, Optional, List, Type
+from typing import Any, Callable, Optional
 from dataclasses import dataclass
 import logging
 

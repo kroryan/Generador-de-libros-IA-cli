@@ -12,7 +12,7 @@ del pipeline de generación.
 """
 
 from enum import Enum
-from typing import List, Dict, Optional, Callable, Pattern
+from typing import List, Dict, Optional
 import re
 import os
 

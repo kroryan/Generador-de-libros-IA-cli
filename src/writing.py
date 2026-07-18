@@ -1,9 +1,8 @@
-from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, BaseChain, parse_model_string
+from utils import BaseEventChain, print_progress, clean_think_tags, extract_content_from_llm_response, parse_model_string
 from chapter_summary import ChapterSummaryChain, ProgressiveContextManager
 from emergency_prompts import emergency_prompts
 from example_library import ExampleLibrary
 from section_quality_monitor import SectionQualityMonitor
-from time import sleep
 import re
 import random
 import logging
@@ -406,7 +405,6 @@ def regenerate_problematic_section(writer_chain, context_manager, section_params
     print_progress("🔄 Intentando regenerar sección problemática...")
     
     # Extractores de parámetros clave
-    chapter_key = section_params.get('chapter_key', 'capítulo actual')
     chapter_title = section_params.get('chapter_title', 'este capítulo')
     current_idea = section_params.get('current_idea', '')
     
@@ -580,7 +578,7 @@ def write_book(
 
     # NUEVO: Inicializar el gestor de contexto con sistema dinámico
     try:
-        from dynamic_context import DynamicContextCalculator, ModelContextProfile
+        from dynamic_context import DynamicContextCalculator
         
         # Intentar detectar el modelo desde variables de entorno
         model_type = os.environ.get("MODEL_TYPE", "ollama").strip().lower() or "ollama"
@@ -652,9 +650,9 @@ def write_book(
             generation_control.checkpoint()
             idea_list = idea_dict[chapter]
             
-            print_progress(f"======================================")
+            print_progress("======================================")
             print_progress(f"CAPÍTULO {i}/{total_chapters}: {chapter}")
-            print_progress(f"======================================")
+            print_progress("======================================")
             
             book[chapter] = []
             ideas_total = len(idea_list)
@@ -923,7 +921,7 @@ def write_book(
                         
                         current_limits = dynamic_status.get('current_limits', {})
                         if current_limits:
-                            print_progress(f"   Límites dinámicos actuales:")
+                            print_progress("   Límites dinámicos actuales:")
                             print_progress(f"     - Sección: {current_limits.get('max_section_context', 'N/A')} chars")
                             print_progress(f"     - Capítulo: {current_limits.get('max_chapter_context', 'N/A')} chars")
             except Exception as e:

@@ -4,7 +4,7 @@ Analiza elementos narrativos para determinar cuánto contexto necesita la histor
 """
 
 import re
-from typing import Set, Dict, List, Optional
+from typing import Set, Dict
 from logging_config import get_logger
 from language import normalize_language
 

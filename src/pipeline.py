@@ -157,11 +157,19 @@ class BookGenerationPipeline:
                     self._progress(f"Saved {len(research_leads)} historical research leads with source URLs.", 6)
 
             def foundation_checkpoint(stage: str, value) -> None:
-                nonlocal title
+                nonlocal title, workspace
                 if stage == "title":
                     title = str(value)
-                    workspace.update(title=title, status="running", current_stage="title")
+                    previous_root = workspace.root
+                    workspace = workspace.rename_for_title(title)
+                    guidance_manager.relocate_project(previous_root, workspace.root)
+                    os.environ["BOOKGEN_PROJECT_DIR"] = str(workspace.root)
+                    workspace.update(status="running", current_stage="title")
                     workspace.write_checkpoint("01-title.md", f"# Title\n\n{title}")
+                    self._progress(
+                        "Project workspace named from the generated title.", 5,
+                        title=title, project_path=str(workspace.root),
+                    )
                 elif stage == "framework":
                     workspace.update(status="running", current_stage="framework")
                     workspace.write_checkpoint("02-framework.md", str(value))
@@ -171,6 +179,10 @@ class BookGenerationPipeline:
                 subject, request.genre, request.style, profile, language,
                 on_stage=foundation_checkpoint,
             )
+            previous_root = workspace.root
+            workspace = workspace.rename_for_title(title)
+            guidance_manager.relocate_project(previous_root, workspace.root)
+            os.environ["BOOKGEN_PROJECT_DIR"] = str(workspace.root)
             workspace.update(title=title, status="running", current_stage="book_bible")
 
             bible_volumes: list[tuple[str, str]] = []

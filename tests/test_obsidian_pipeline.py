@@ -11,6 +11,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from language import normalize_language
+from book_project import BookProjectWorkspace
 from obsidian_vault import ObsidianVaultWriter, VaultProject
 from publishing import VaultPublisher
 from novelist_agent import NovelistAgent
@@ -78,6 +79,30 @@ class ObsidianPipelineTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def test_workspace_uses_generated_title_instead_of_prompt(self):
+        prompt = "A very long user prompt that must never become a project directory"
+        workspace = BookProjectWorkspace.create(self.root / "books", {"subject": prompt})
+        temporary_root = workspace.root
+        self.assertTrue(temporary_root.name.startswith("pending-book-"))
+        self.assertNotIn("long-user-prompt", temporary_root.name)
+
+        renamed = workspace.rename_for_title("The Cartographer's Paradox")
+
+        self.assertEqual(renamed.root.name, "the-cartographers-paradox")
+        self.assertFalse(temporary_root.exists())
+        self.assertTrue((renamed.root / "Work" / "00 Request.md").is_file())
+        manifest = renamed.read_manifest()
+        self.assertEqual(manifest["project_id"], "the-cartographers-paradox")
+        self.assertEqual(manifest["title"], "The Cartographer's Paradox")
+
+    def test_workspace_title_collision_uses_stable_suffix(self):
+        output = self.root / "books"
+        first = BookProjectWorkspace.create(output, {"subject": "First"}).rename_for_title("Shared Title")
+        second = BookProjectWorkspace.create(output, {"subject": "Second"}).rename_for_title("Shared Title")
+
+        self.assertEqual(first.root.name, "shared-title")
+        self.assertEqual(second.root.name, "shared-title-2")
 
     def test_language_validation(self):
         self.assertEqual(normalize_language("English"), "en")
@@ -249,6 +274,11 @@ class ObsidianPipelineTests(unittest.TestCase):
         )
         events = []
 
+        def foundation(*args, **kwargs):
+            kwargs["on_stage"]("title", "Ordered")
+            kwargs["on_stage"]("framework", "Framework")
+            return "Ordered", "Framework"
+
         def bible(*args, **kwargs):
             events.append("bible")
             kwargs["on_volume"](
@@ -278,13 +308,14 @@ class ObsidianPipelineTests(unittest.TestCase):
             for chapter in args[6]:
                 kwargs["on_chapter_complete"](chapter, ["Narrative prose."], "Summary.")
 
-        with patch("pipeline.get_foundation", return_value=("Ordered", "Framework")), patch(
+        with patch("pipeline.get_foundation", side_effect=foundation), patch(
             "pipeline.BookBibleChain.run", side_effect=bible
         ), patch("pipeline.WikiDataChain.run", side_effect=wiki), patch(
             "pipeline.get_chapter_outline", side_effect=outline
         ), patch("pipeline.get_ideas", side_effect=plans), patch("pipeline.write_book", side_effect=draft):
             BookGenerationPipeline().run(request)
         self.assertEqual(events, ["bible", "wiki", "outline", "plans", "draft"])
+        self.assertTrue((output / "ordered").is_dir())
         checkpoints = list(output.glob("*/.bookgen/checkpoints/bible-01-core-canon-continuity.md"))
         self.assertEqual(len(checkpoints), 1)
 
@@ -403,6 +434,7 @@ class ObsidianPipelineTests(unittest.TestCase):
 
         projects = list(output.iterdir())
         self.assertEqual(projects, [result.project_path])
+        self.assertEqual(result.project_path.name, "signal-archive")
         self.assertEqual(result.vault_path, result.project_path)
         self.assertEqual(result.output_path.parent, result.project_path / "Exports")
         self.assertTrue((result.project_path / "Work" / "00 Request.md").is_file())

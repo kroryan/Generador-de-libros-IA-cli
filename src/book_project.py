@@ -33,8 +33,7 @@ class BookProjectWorkspace:
         base = Path(output_directory).expanduser().resolve()
         base.mkdir(parents=True, exist_ok=True)
         now = datetime.now(timezone.utc)
-        subject_slug = slugify(str(request.get("subject", "book")))[:48]
-        stem = f"{now.strftime('%Y%m%d-%H%M%S')}-{subject_slug}"
+        stem = f"pending-book-{now.strftime('%Y%m%d-%H%M%S')}"
         root = base / stem
         suffix = 2
         while root.exists():
@@ -68,6 +67,35 @@ class BookProjectWorkspace:
             f"## Reader and constraints\n\n{request.get('profile', '')}\n",
             stage="request",
         )
+        return workspace
+
+    def rename_for_title(self, title: str) -> "BookProjectWorkspace":
+        """Atomically replace the temporary directory name with the generated title."""
+        clean_title = str(title).strip()
+        title_slug = slugify(clean_title)[:100]
+        manifest = self.read_manifest()
+        if (
+            manifest.get("title") == clean_title
+            and manifest.get("project_id") == self.root.name
+            and not self.root.name.startswith("pending-book-")
+        ):
+            return self
+
+        stem = title_slug or "untitled-book"
+        destination = self.root.parent / stem
+        suffix = 2
+        while destination.exists() and destination != self.root:
+            destination = self.root.parent / f"{stem}-{suffix}"
+            suffix += 1
+
+        if destination != self.root:
+            self.root.rename(destination)
+        workspace = type(self)(destination)
+        manifest["project_id"] = destination.name
+        manifest["title"] = clean_title
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        workspace._write_manifest(manifest)
+        workspace._refresh_dashboard()
         return workspace
 
     def read_manifest(self) -> dict:

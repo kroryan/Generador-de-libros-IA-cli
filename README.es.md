@@ -156,8 +156,10 @@ necesarias durante la construccion de una boveda nueva.
 
 ## Carpeta de proyecto
 
-Cada generacion crea una unica carpeta en `books/` antes de llamar al modelo. Esa carpeta
-es directamente un vault de Obsidian. Los resultados intermedios se guardan en
+Cada generacion crea una carpeta neutra `pending-book-*` en `books/` antes de llamar al modelo.
+En cuanto la IA elige el titulo, la carpeta se renombra atomicamente a partir de ese titulo; el
+prompt del usuario nunca se usa como nombre de directorio y las colisiones reciben un sufijo
+numerico. Esa carpeta es directamente un vault de Obsidian. Los resultados intermedios se guardan en
 `.bookgen/checkpoints/`; los seis volumenes visibles son la unica copia canonica de la
 biblia y los portales solo los enlazan. Un fallo posterior no pierde el trabajo completado.
 Codex y Claude Code trabajan con esa carpeta como directorio.

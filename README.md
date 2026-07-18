@@ -177,8 +177,10 @@ published output inside its isolated project under `books/`.
 
 ## Project workspace
 
-Every generation creates one project directory before the first model call. The directory
-itself is an Obsidian vault and contains all durable work for that book:
+Every generation creates a neutral `pending-book-*` project directory before the first model
+call. As soon as the AI chooses the title, that directory is atomically renamed from the title;
+the user prompt is never used as a directory name, and collisions receive a numeric suffix. The
+directory itself is an Obsidian vault and contains all durable work for that book:
 
 ```text
 books/<timestamp>-<premise>/

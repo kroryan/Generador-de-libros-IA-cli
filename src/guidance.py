@@ -40,6 +40,12 @@ class GuidanceManager:
         for item in messages:
             self._persist(Path(project), item)
 
+    def relocate_project(self, previous: Path, project: Path) -> None:
+        """Follow an atomic workspace rename without persisting guidance twice."""
+        with self._lock:
+            if self._project == Path(previous):
+                self._project = Path(project)
+
     def finish_generation(self) -> None:
         with self._lock:
             self._active = False

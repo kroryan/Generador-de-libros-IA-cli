@@ -18,9 +18,9 @@ and prevents later exports from drifting away from the chapter files.
 The generation sequence is:
 
 1. Create an isolated project and generate only the title and foundational framework
-2. Build six substantial canonical bible volumes
+2. Build, audit, and repair six substantial canonical bible volumes
 3. Create the Obsidian vault and its structural notes
-4. Extract and expand characters, locations, organizations, objects, concepts, and events
+4. Extract, audit, and repair characters, locations, organizations, objects, concepts, and events
 5. Merge names and aliases into one canonical entity registry and validate every graph link
 6. Plan the chapter outline from the completed bible and wiki
 7. Generate detailed chapter briefs and ordered scene or expository-section plans
@@ -31,7 +31,7 @@ The generation sequence is:
 ## Vault layout
 
 ```text
-books/<timestamp>-<premise>/
+books/<generated-title>/
 ├── 00 - Start/                 portal, master index, wiki index, project control
 ├── 01 - Story Core/            bible portal and six canonical volumes
 ├── 02 - Story and Continuity/  events and story architecture
@@ -57,14 +57,17 @@ books/<timestamp>-<premise>/
 The model supplies canonical entity data, but application code creates wikilinks only
 after registering real notes. Before each export, missing links are converted back to
 plain visible text, resolvable links are normalized, and the graph is validated again.
+Every bible volume and wiki domain must pass deterministic checks plus an independent LLM
+continuity/taxonomy audit. Failed candidates are saved in `.bookgen/checkpoints/`, repaired up
+to the configured limit, and never become canon while critical issues remain.
 
 ## Installation
 
 Python 3.11 is recommended.
 
 ```bash
-git clone https://github.com/kroryan/Generador-de-libros-IA-cli.git
-cd Generador-de-libros-IA-cli
+git clone https://github.com/kroryan/CyberNovelist-AI.git
+cd CyberNovelist-AI
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

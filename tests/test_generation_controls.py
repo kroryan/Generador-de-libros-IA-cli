@@ -11,10 +11,25 @@ from langchain_community.llms.fake import FakeListLLM
 
 from generation_control import GenerationCancelled, GenerationControl
 from writing import WriterChain
-from book_bible import _chunk_source_context
+from book_bible import (
+    BIBLE_VOLUMES,
+    BibleQualityAuditChain,
+    BookBibleChain,
+    WikiDomainChain,
+    _balanced_markdown_excerpt,
+    _chunk_source_context,
+    _static_bible_issues,
+)
 from obsidian_vault import ObsidianVaultWriter
 from vault_context import IncrementalVaultContextBuilder
-from editorial_policy import editorial_policy, is_documentary_history, is_historical_fiction
+from editorial_policy import (
+    editorial_policy,
+    is_documentary_history,
+    is_fiction,
+    is_historical_fiction,
+    is_nonfiction,
+)
+from structure import _framework_issues
 from guidance import GuidanceManager
 from novelist_agent import NovelistAgent
 from web_research import read_public_page, search_duckduckgo
@@ -84,6 +99,90 @@ def test_history_and_historical_fiction_have_distinct_policies():
     assert is_historical_fiction("Historical fiction")
     assert "Corroborate" in editorial_policy("History")
     assert "Story quality remains primary" in editorial_policy("Historical fiction")
+
+
+def test_genre_policy_separates_fiction_from_nonfiction_sources():
+    assert is_fiction("Fantasia cientifica")
+    assert not is_nonfiction("Fantasia cientifica")
+    assert is_nonfiction("Divulgacion cientifica")
+    assert "Never fabricate or recommend real citations" in editorial_policy("Science fantasy")
+    assert "Never invent quotations" in editorial_policy("Popular science")
+
+
+def test_framework_rejects_premature_chapter_plan_and_fiction_bibliography():
+    bad = "## Estructura\nActo 1. Capítulos 1-7.\n## Resolución\nTodo termina.\n## Fuentes recomendadas\nNASA Tech Memo. " + "detalle " * 190
+    issues = _framework_issues(bad, "Fantasia cientifica")
+    assert any("prematurely plans" in issue for issue in issues)
+    assert any("source recommendations" in issue for issue in issues)
+    assert any("fixes the ending" in issue for issue in issues)
+
+
+def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Volumen 1 - Personas\nLos personajes avanzan.\n"
+        "## Fuentes recomendadas\nDatos basados en fuentes académicas verificables y NASA Tech Memo."
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica")
+    assert any("volume number" in issue for issue in issues)
+    assert any("scholarship" in issue for issue in issues)
+
+
+def test_bible_quality_gate_repairs_before_accepting(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    monkeypatch.setenv("BIBLE_QUALITY_MAX_REPAIRS", "2")
+    bad = "## Volumen 1\nFuentes académicas verificables. " + "detalle " * 20
+    repaired = "## Canon coherente\n" + "detalle " * 30
+    reports = []
+    audits = [
+        {"verdict": "repair", "issues": [{"problem": "Elias is both dead and active."}]},
+        {"verdict": "pass", "issues": []},
+    ]
+    with patch("book_bible.BibleQualityAuditChain.run", side_effect=audits), patch(
+        "book_bible.BibleVolumeRepairChain.run", return_value=repaired
+    ) as repair:
+        accepted = BookBibleChain._quality_gate(
+            bad, BIBLE_VOLUMES[0][0], 1, BIBLE_VOLUMES[0][1], "Premise",
+            "Fantasia cientifica", "Framework", "No prior canon", "es",
+            lambda *args: reports.append(args[4]),
+        )
+    assert accepted == repaired
+    assert repair.call_count == 1
+    assert [report["passed"] for report in reports] == [False, True]
+
+
+def test_bible_auditor_accepts_strict_json_and_normalizes_verdict():
+    response = '{"verdict":"PASS","issues":[]}'
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[response])):
+        result = BibleQualityAuditChain().run(
+            "Foundation", 1, 6, "Coverage", "Premise", "Science fiction",
+            "Framework", "No prior canon", "## Candidate\nConcrete canon.", "en",
+        )
+    assert result == {"verdict": "pass", "issues": []}
+
+
+def test_wiki_domain_repairs_semantic_taxonomy_before_accepting(monkeypatch):
+    monkeypatch.setenv("WIKI_ITEM_MIN_WORDS", "5")
+    monkeypatch.setenv("WIKI_QUALITY_MAX_REPAIRS", "2")
+    first = '{"items":[{"name":"Planeta Eterna","subtype":"planet","summary":"A planet.","details":"## Detail\\nUseful canonical detail for the planet.","relationships":[]}]}'
+    second = '{"items":[{"name":"Concordia","subtype":"order","summary":"An order.","details":"## Detail\\nUseful canonical detail for the established order.","relationships":[]}]}'
+    audits = [
+        {"verdict": "repair", "issues": [{"problem": "A planet is not an organization."}]},
+        {"verdict": "pass", "issues": []},
+    ]
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[first, second])), patch(
+        "book_bible.WikiQualityAuditChain.run", side_effect=audits
+    ):
+        items = WikiDomainChain().run("organizations", "1-2 organizations", "Canon", "en")
+    assert [item["name"] for item in items] == ["Concordia"]
+
+
+def test_balanced_markdown_excerpt_keeps_late_sections_visible():
+    source = "\n\n".join(f"## Section {index}\n" + (str(index) * 200) for index in range(1, 8))
+    excerpt = _balanced_markdown_excerpt(source, 700)
+    assert len(excerpt) <= 700
+    assert "## Section 1" in excerpt
+    assert "## Section 7" in excerpt
 
 
 def test_duckduckgo_search_parses_real_source_metadata_without_network():

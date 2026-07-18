@@ -281,6 +281,11 @@ class ObsidianPipelineTests(unittest.TestCase):
 
         def bible(*args, **kwargs):
             events.append("bible")
+            kwargs["on_quality"](
+                1, 1, "Core Canon & Continuity", 0,
+                {"passed": True, "audit": {"verdict": "pass", "issues": []}},
+                "Canonical bible.",
+            )
             kwargs["on_volume"](
                 1,
                 1,
@@ -292,7 +297,13 @@ class ObsidianPipelineTests(unittest.TestCase):
 
         def wiki(*args, **kwargs):
             events.append("wiki")
-            return {key: [] for key in ("characters", "locations", "organizations", "objects", "concepts", "events")}
+            result = {key: [] for key in ("characters", "locations", "organizations", "objects", "concepts", "events")}
+            kwargs["on_quality"](
+                1, 6, "characters", 0,
+                {"passed": True, "audit": {"verdict": "pass", "issues": []}}, [],
+            )
+            kwargs["on_domain"](1, 6, "characters", [], {"characters": []})
+            return result
 
         def outline(*args, **kwargs):
             events.append("outline")
@@ -318,6 +329,9 @@ class ObsidianPipelineTests(unittest.TestCase):
         self.assertTrue((output / "ordered").is_dir())
         checkpoints = list(output.glob("*/.bookgen/checkpoints/bible-01-core-canon-continuity.md"))
         self.assertEqual(len(checkpoints), 1)
+        self.assertEqual(len(list(output.glob("*/.bookgen/checkpoints/bible-quality-*.json"))), 1)
+        self.assertEqual(len(list(output.glob("*/.bookgen/checkpoints/wiki-quality-*-cycle-00.json"))), 1)
+        self.assertEqual(len(list(output.glob("*/.bookgen/checkpoints/wiki-quality-*-candidate.json"))), 1)
 
     def test_checkpoint_name_normalizes_unicode_and_symbols(self):
         self.assertEqual(_checkpoint_name("  Núcleo & Continuidad  "), "núcleo-continuidad")

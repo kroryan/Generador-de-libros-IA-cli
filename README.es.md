@@ -12,9 +12,9 @@ estan soportados durante todo el flujo.
 ## Flujo de generacion
 
 1. Carpeta aislada, titulo y marco narrativo inicial
-2. Seis volumenes extensos de biblia canonica
+2. Seis volumenes extensos de biblia auditados y reparados antes de ser canonicos
 3. Creacion de la estructura de Obsidian
-4. Wiki de personajes, lugares, organizaciones, objetos, conceptos y eventos
+4. Wiki de personajes, lugares, organizaciones, objetos, conceptos y eventos auditada por dominio
 5. Fusion de nombres y alias en un registro canonico y validacion del graph
 6. Esquema de capitulos creado desde la biblia y la wiki terminadas
 7. Briefs de capitulos y planes de escenas o secciones expositivas
@@ -25,7 +25,7 @@ estan soportados durante todo el flujo.
 ## Estructura del vault
 
 ```text
-books/<fecha>-<premisa>/
+books/<titulo-generado>/
 ├── 00 - Inicio/
 ├── 01 - Nucleo de la obra/       portal y seis volumenes de biblia
 ├── 02 - Historia y continuidad/
@@ -51,12 +51,15 @@ books/<fecha>-<premisa>/
 La IA proporciona los datos de las entidades, pero los enlaces los crea el programa solo
 despues de registrar notas reales. Los enlaces inexistentes se convierten en texto normal,
 los resolubles se normalizan y el graph se vuelve a validar antes de publicar.
+Cada volumen y dominio debe superar comprobaciones deterministas y una auditoria LLM independiente
+de continuidad, factualidad y taxonomia. Los candidatos fallidos quedan en `.bookgen/checkpoints/`,
+se reparan hasta el limite configurado y no se convierten en canon con errores criticos pendientes.
 
 ## Instalacion
 
 ```bash
-git clone https://github.com/kroryan/Generador-de-libros-IA-cli.git
-cd Generador-de-libros-IA-cli
+git clone https://github.com/kroryan/CyberNovelist-AI.git
+cd CyberNovelist-AI
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

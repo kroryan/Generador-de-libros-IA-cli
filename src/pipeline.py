@@ -194,10 +194,21 @@ class BookGenerationPipeline:
                     8 + int(20 * index / max(1, total)), title=title,
                 )
 
+            def bible_quality_checkpoint(index, total, name, cycle, report, candidate) -> None:
+                stem = f"bible-quality-{index:02d}-cycle-{cycle:02d}-{_checkpoint_name(name)}"
+                workspace.write_checkpoint(f"{stem}.json", report)
+                workspace.write_checkpoint(f"{stem}-candidate.md", candidate)
+                outcome = "passed" if report.get("passed") else "requires repair"
+                self._progress(
+                    f"Bible quality audit {index}/{total}, cycle {cycle + 1}: {outcome}",
+                    8 + int(20 * (index - 1) / max(1, total)), title=title,
+                )
+
             self._progress("Building the canonical book bible before chapter planning...", 8, title=title)
             bible = BookBibleChain().run(
                 subject, request.genre, request.style, profile,
                 title, framework, language, on_volume=bible_checkpoint,
+                on_quality=bible_quality_checkpoint,
             )
             workspace.write_checkpoint("bible-complete.md", bible)
 
@@ -217,8 +228,20 @@ class BookGenerationPipeline:
                     30 + int(14 * index / max(1, total)), title=title,
                 )
 
+            def wiki_quality_checkpoint(index, total, domain, cycle, report, items) -> None:
+                stem = f"wiki-quality-{index:02d}-{domain}-cycle-{cycle:02d}"
+                workspace.write_checkpoint(f"{stem}.json", report)
+                workspace.write_checkpoint(f"{stem}-candidate.json", items)
+                outcome = "passed" if report.get("passed") else "requires repair"
+                self._progress(
+                    f"Wiki quality audit {index}/{total}, cycle {cycle + 1}: {outcome}",
+                    30 + int(14 * (index - 1) / max(1, total)), title=title,
+                )
+
             self._progress("Expanding and linking the canonical wiki...", 30, title=title)
-            wiki_data = WikiDataChain().run(bible, language, on_domain=wiki_checkpoint)
+            wiki_data = WikiDataChain().run(
+                bible, language, on_domain=wiki_checkpoint, on_quality=wiki_quality_checkpoint,
+            )
             workspace.write_checkpoint("wiki-complete.json", wiki_data)
             project.write_wiki(wiki_data)
             if source_digest:

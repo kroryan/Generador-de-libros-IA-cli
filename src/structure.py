@@ -1,5 +1,8 @@
 """Generate the title, narrative framework, and chapter outline."""
 
+import re
+
+from editorial_policy import editorial_policy, is_fiction
 from language import get_language, language_instruction, normalize_language
 from utils import (
     BaseStructureChain,
@@ -36,12 +39,16 @@ Title:
 
 class FrameworkChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
-Create a specific long-form framework appropriate to this book's genre. For fiction,
-define setting rules, characters, motivations, causal plot movement, stakes, and themes.
-For nonfiction, define thesis, scope, chronology or conceptual progression, key people and
-institutions, evidence standards, competing interpretations, reader outcomes, and source
-requirements. Establish only facts later steps may safely treat as canonical; explicitly
-mark claims that require research. Do not draft chapters or invent facts, quotations, or sources.
+Create a compact foundation seed appropriate to this book's genre. The six-volume bible will
+expand and canonize all details after this step. For fiction, define the premise contract,
+reader promise, central tensions, initial character-role requirements, essential world-rule
+boundaries, thematic questions, and style boundaries. For nonfiction, define thesis questions,
+scope boundaries, evidence classes, reader outcomes, and open research obligations.
+
+Do not plan acts, chapters, scenes, chapter ranges, climax beats, or the ending. Do not provide
+a bibliography, recommended sources, citations, quotations, or invented evidence. Do not lock
+minor names, measurements, dates, or lore that belong in the audited bible. Use descriptive
+Markdown headings and preserve genuine unknowns as questions.
 {language_instruction}
 
 Subject: {subject}
@@ -54,19 +61,52 @@ The selected genre controls factuality: History/Historia requires sourced, quali
 claims; Historical fiction/Ficcion historica preserves credible period facts without losing
 its freedom to invent story material.
 
+Binding genre policy:
+{genre_policy}
+
+Quality correction from a previous attempt:
+{quality_feedback}
+
 Book framework:
 """
 
     def run(self, subject, genre, style, profile, title, language="en"):
         print_progress("Generating narrative framework...")
-        return self.invoke(
-            subject=clean_think_tags(subject),
-            genre=clean_think_tags(genre),
-            style=clean_think_tags(style),
-            profile=clean_think_tags(profile),
-            title=clean_think_tags(title),
-            language_instruction=language_instruction(language),
-        )
+        feedback = "None; this is the first attempt."
+        for _attempt in range(2):
+            result = self.invoke(
+                subject=clean_think_tags(subject), genre=clean_think_tags(genre),
+                style=clean_think_tags(style), profile=clean_think_tags(profile),
+                title=clean_think_tags(title), language_instruction=language_instruction(language),
+                genre_policy=editorial_policy(genre), quality_feedback=feedback,
+            )
+            issues = _framework_issues(result, genre)
+            if not issues:
+                return result
+            feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
+        raise ValueError("The foundational framework still planned chapters or contained unsupported sources after repair")
+
+
+def _framework_issues(value: str, genre: str) -> list[str]:
+    text = str(value)
+    issues = []
+    if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < 180 or "##" not in text:
+        issues.append("The foundation is too short or lacks descriptive level-two Markdown sections.")
+    premature_patterns = (
+        r"(?i)\b(?:chapters?|cap[ií]tulos?)\s+\d+\s*[-–—]\s*\d+",
+        r"(?i)\b(?:act|acto)\s+[ivx\d]+\b",
+        r"(?i)\b(?:chapter|cap[ií]tulo)\s+\d+\b",
+    )
+    if any(re.search(pattern, text) for pattern in premature_patterns):
+        issues.append("It prematurely plans acts or numbered chapters; keep only pre-bible foundation constraints.")
+    if re.search(r"(?im)^#{1,4}\s+(?:ending|final|resolution|resoluci[oó]n|desenlace)\b", text):
+        issues.append("It prematurely fixes the ending; leave story outcomes for the audited architecture volume.")
+    if is_fiction(genre) and re.search(
+        r"(?i)\b(?:bibliograf[ií]a|fuentes? recomendadas?|recommended sources?|academic sources?|"
+        r"fuentes acad[eé]micas|reference list)\b", text,
+    ):
+        issues.append("Fiction must not contain real-world source recommendations or claims of academic support.")
+    return issues
 
 
 class ChaptersChain(BaseStructureChain):

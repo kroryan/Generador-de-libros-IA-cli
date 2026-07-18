@@ -5,6 +5,28 @@ from __future__ import annotations
 import re
 
 
+FICTION_GENRES = {
+    "science fantasy", "fantasia cientifica", "fantasía científica",
+    "science fiction", "ciencia ficcion", "ciencia ficción",
+    "epic fantasy", "fantasia epica", "fantasía épica",
+    "cyberpunk", "dystopian fiction", "ficcion distopica", "ficción distópica",
+    "space opera", "opera espacial", "ópera espacial",
+    "magical realism", "realismo magico", "realismo mágico",
+    "historical fiction", "ficcion historica", "ficción histórica",
+    "romance", "mystery", "misterio", "horror", "terror",
+}
+
+NONFICTION_GENRES = {
+    "history", "historia", "biography", "biografia", "biografía",
+    "memoir", "memorias", "narrative nonfiction", "no ficcion narrativa", "no ficción narrativa",
+    "popular science", "divulgacion cientifica", "divulgación científica",
+    "essay", "ensayo", "true crime", "crimen real", "philosophy", "filosofia", "filosofía",
+    "politics and society", "politica y sociedad", "política y sociedad",
+    "technical handbook", "manual tecnico", "manual técnico",
+    "self-improvement", "desarrollo personal", "travel writing", "literatura de viajes",
+}
+
+
 def _key(value: str) -> str:
     return re.sub(r"\s+", " ", str(value).strip().casefold())
 
@@ -15,6 +37,14 @@ def is_documentary_history(genre: str) -> bool:
 
 def is_historical_fiction(genre: str) -> bool:
     return _key(genre) in {"historical fiction", "ficcion historica", "ficción histórica"}
+
+
+def is_fiction(genre: str) -> bool:
+    return _key(genre) in FICTION_GENRES
+
+
+def is_nonfiction(genre: str) -> bool:
+    return _key(genre) in NONFICTION_GENRES
 
 
 def editorial_policy(genre: str) -> str:
@@ -30,6 +60,20 @@ def editorial_policy(genre: str) -> str:
             "major public facts credible when relevant, while allowing invented characters, scenes, dialogue, "
             "and deliberate deviations identified by the user. Story quality remains primary; do not force "
             "documentary exposition into the narrative."
+        )
+    if is_fiction(genre):
+        return (
+            "This is fiction. Invented people, places, institutions, history, science, and magic belong to the "
+            "internal canon, not to real-world scholarship. Never fabricate or recommend real citations, academic "
+            "sources, missions, papers, or expert verification. Never claim that invented mechanisms are supported "
+            "by real science. Use exact measurements only when they have a story function and remain mutually "
+            "consistent; prefer clear fictional operating rules over pseudo-scientific precision."
+        )
+    if is_nonfiction(genre):
+        return (
+            "This is nonfiction. Separate documented fact, attributed interpretation, inference, and open research. "
+            "Never invent quotations, citations, sources, dates, people, institutions, or measurements. Unverified "
+            "material must remain an explicit research question rather than becoming canon."
         )
     return (
         "Apply the conventions and factuality standard appropriate to the selected genre. Nonfiction claims "

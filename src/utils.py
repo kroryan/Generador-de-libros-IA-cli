@@ -502,7 +502,7 @@ class BaseChain:
                 )
                 result = {"text": self.llm.invoke(guided_prompt)}
             else:
-                result = self.chain(kwargs)
+                result = self.chain.invoke(kwargs)
             
             if result:
                 # Usar la función para extraer contenido independientemente del formato

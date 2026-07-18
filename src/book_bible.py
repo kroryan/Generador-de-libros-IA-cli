@@ -82,7 +82,7 @@ def _audit_issue_text(item: object) -> str:
     return f"{problem} Required repair: {repair}" if repair else problem
 
 
-def _static_bible_issues(candidate: str, genre: str) -> list[str]:
+def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0) -> list[str]:
     text = str(candidate).strip()
     issues = []
     minimum = int(os.getenv("BIBLE_VOLUME_MIN_WORDS", "500"))
@@ -98,6 +98,29 @@ def _static_bible_issues(candidate: str, genre: str) -> list[str]:
         issues.append("Remove fabricated or unverified real-world scholarship from this fictional canon.")
     if re.search(r"(?i)\b(?:chapters?|cap[ií]tulos?)\s+\d+\s*[-–—]\s*\d+", text):
         issues.append("Remove numbered chapter ranges; chapter planning happens only after the audited vault exists.")
+    if is_fiction(genre) and volume_index == 1:
+        misplaced_headings = re.findall(
+            r"(?im)^#{2,4}\s+.*(?:"
+            r"main characters?|personajes principales|technology ledger|ledger of technolog|"
+            r"registro de tecnolog|ledger of laws?|registro de leyes|timeline|l[ií]nea de tiempo|"
+            r"history of|historia de|verified facts?|hechos verificados|sources? of|fuentes de|"
+            r"narrative devices?|dispositivos narrativos)",
+            text,
+        )
+        if misplaced_headings:
+            issues.append(
+                "Keep foundation volume 1 within editorial scope: defer named cast, technology/law ledgers, "
+                "history, timelines, source apparatus, and narrative devices to their assigned later volumes."
+            )
+        measurements = re.findall(
+            r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
+            text,
+        )
+        if len(measurements) >= 2:
+            issues.append(
+                "Remove clusters of exact fictional measurements from foundation volume 1; canonize only "
+                "operationally justified values in the world/domain volume."
+            )
     return issues
 
 
@@ -221,6 +244,10 @@ separate verified facts, source leads, inference, and open verification. Histori
 may invent narrative material while preserving relevant period context. Do not plan numbered
 chapters or write finished book prose. Do not emit Obsidian wikilinks; application code creates only links
 whose target notes exist.
+Stay inside this volume's required coverage. Do not pull forward material assigned to another
+volume merely to increase length. In the creative/editorial foundation, define role requirements
+without naming a cast and preserve world mechanisms, measurements, history, chronology, objects,
+organizations, and narrative architecture for their dedicated later volumes.
 {language_instruction}
 
 Binding genre policy:
@@ -286,8 +313,9 @@ requested book language.
 Use "repair" for any contradiction; person who is both dead and active without an explicit
 mechanism; entity assigned to the wrong category; fabricated or unverifiable real-world source;
 fictional science presented as established real science; arbitrary measurements that conflict or
-add no operational value; premature chapter planning; duplicate volume numbering; wrong language;
-truncation; or material repetition that displaces required coverage. Be strict but do not reject
+add no operational value; material assigned to a different bible volume; premature chapter planning;
+duplicate volume numbering; wrong language; truncation; or material repetition that displaces
+required coverage. Be strict but do not reject
 clearly declared fictional worldbuilding merely because it is invented.
 {language_instruction}
 
@@ -392,11 +420,18 @@ class BookBibleChain:
                       prior, language, on_quality) -> str:
         max_repairs = max(1, int(os.getenv("BIBLE_QUALITY_MAX_REPAIRS", "2")))
         for cycle in range(max_repairs + 1):
-            deterministic = _static_bible_issues(candidate, genre)
-            audit = BibleQualityAuditChain().run(
-                name, index, len(BIBLE_VOLUMES), requirements, subject, genre,
-                framework, prior, candidate, language,
-            )
+            deterministic = _static_bible_issues(candidate, genre, index)
+            if deterministic:
+                audit = {
+                    "verdict": "repair",
+                    "issues": [],
+                    "skipped": "Deterministic blockers must be repaired before semantic auditing.",
+                }
+            else:
+                audit = BibleQualityAuditChain().run(
+                    name, index, len(BIBLE_VOLUMES), requirements, subject, genre,
+                    framework, prior, candidate, language,
+                )
             audit_issues = [_audit_issue_text(item) for item in audit.get("issues", [])]
             issues = list(dict.fromkeys([*deterministic, *audit_issues]))
             passed = audit.get("verdict") == "pass" and not issues

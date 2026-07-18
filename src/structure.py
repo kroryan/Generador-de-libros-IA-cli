@@ -84,7 +84,7 @@ Book framework:
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
-        raise ValueError("The foundational framework still planned chapters or contained unsupported sources after repair")
+        raise ValueError("The foundational framework still fixed downstream canon or contained unsupported material after repair")
 
 
 def _framework_issues(value: str, genre: str) -> list[str]:
@@ -101,6 +101,33 @@ def _framework_issues(value: str, genre: str) -> list[str]:
         issues.append("It prematurely plans acts or numbered chapters; keep only pre-bible foundation constraints.")
     if re.search(r"(?im)^#{1,4}\s+(?:ending|final|resolution|resoluci[oó]n|desenlace)\b", text):
         issues.append("It prematurely fixes the ending; leave story outcomes for the audited architecture volume.")
+    if is_fiction(genre) and re.search(
+        r"(?i)\b(?:climax|cl[ií]max|resolution|resoluci[oó]n|ending|desenlace)\b",
+        text,
+    ):
+        issues.append("It fixes downstream story architecture; the framework may define tensions but not climax or resolution beats.")
+    if is_fiction(genre) and re.search(
+        r"(?im)^#{1,4}\s+.*(?:main characters?|personajes principales|timeline|l[ií]nea de tiempo|"
+        r"technology ledger|registro de tecnolog|ledger of laws?|registro de leyes|history of|historia de)",
+        text,
+    ):
+        issues.append("It canonizes named cast or encyclopedia material that belongs in the audited bible volumes.")
+    role_section = re.search(
+        r"(?ims)^#{1,4}[^\n]*(?:role requirements?|requisitos[^\n]*roles?[^\n]*personajes?)[^\n]*\n"
+        r"(.*?)(?=^#{1,4}\s|\Z)",
+        text,
+    )
+    if is_fiction(genre) and role_section and re.search(
+        r"(?i)\*\*[^*\n]+\*\*\s*\([^)]*(?:protagonist|protagonista|captain|capit[aá]n|"
+        r"alchemist|alquimista|robot|antagonist|antagonista)",
+        role_section.group(1),
+    ):
+        issues.append("Role requirements must use unnamed functions; the people/relationships bible volume owns cast names and biographies.")
+    if is_fiction(genre) and len(re.findall(
+        r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
+        text,
+    )) >= 2:
+        issues.append("It locks clusters of arbitrary measurements before the world/domain bible is audited.")
     if is_fiction(genre) and re.search(
         r"(?i)\b(?:bibliograf[ií]a|fuentes? recomendadas?|recommended sources?|academic sources?|"
         r"fuentes acad[eé]micas|reference list)\b", text,

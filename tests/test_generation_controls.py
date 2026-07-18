@@ -117,6 +117,30 @@ def test_framework_rejects_premature_chapter_plan_and_fiction_bibliography():
     assert any("fixes the ending" in issue for issue in issues)
 
 
+def test_framework_rejects_downstream_architecture_and_encyclopedia_material():
+    bad = (
+        "## Personajes principales\nElias lidera la expedicion.\n"
+        "## Estructura narrativa\nEl climax destruye el motor y la resolucion restaura la alianza.\n"
+        "## Registro de tecnologias\nEl motor produce 500 TW y el escudo consume 200 GW.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(bad, "Fantasia cientifica")
+    assert any("story architecture" in issue for issue in issues)
+    assert any("encyclopedia material" in issue for issue in issues)
+    assert any("arbitrary measurements" in issue for issue in issues)
+
+
+def test_framework_rejects_named_cast_hidden_in_role_requirements():
+    bad = (
+        "## **4. Requisitos iniciales de roles de personajes**  \n"
+        "| Rol | Funcion |\n|---|---|\n"
+        "| **Elias Varga** (protagonista) | Ingeniero dividido entre dos tradiciones. |\n"
+        "## Preguntas tematicas\n" + "pregunta abierta " * 190
+    )
+    issues = _framework_issues(bad, "Fantasia cientifica")
+    assert any("unnamed functions" in issue for issue in issues)
+
+
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):
     monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
     candidate = (
@@ -126,6 +150,20 @@ def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypat
     issues = _static_bible_issues(candidate, "Fantasia cientifica")
     assert any("volume number" in issue for issue in issues)
     assert any("scholarship" in issue for issue in issues)
+
+
+def test_foundation_gate_rejects_observed_scope_drift_and_fake_precision(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Premisa\nUna expedicion combina ciencia y magia.\n"
+        "## Personajes principales\nElias y Mara dirigen la nave.\n"
+        "## Ledger de tecnologias\nEl motor usa 500 TW y el transmisor 10 GW.\n"
+        "## Linea de tiempo\nEl consorcio nace en el ano cero.\n"
+        "## Fuentes de la historia\nUn diario interno acredita los hechos.\n"
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1)
+    assert any("editorial scope" in issue for issue in issues)
+    assert any("exact fictional measurements" in issue for issue in issues)
 
 
 def test_bible_quality_gate_repairs_before_accepting(monkeypatch):
@@ -147,8 +185,8 @@ def test_bible_quality_gate_repairs_before_accepting(monkeypatch):
             lambda *args: reports.append(args[4]),
         )
     assert accepted == repaired
-    assert repair.call_count == 1
-    assert [report["passed"] for report in reports] == [False, True]
+    assert repair.call_count == 2
+    assert [report["passed"] for report in reports] == [False, False, True]
 
 
 def test_bible_auditor_accepts_strict_json_and_normalizes_verdict():

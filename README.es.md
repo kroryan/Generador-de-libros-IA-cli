@@ -12,8 +12,8 @@ estan soportados durante todo el flujo.
 ## Flujo de generacion
 
 1. Carpeta aislada, titulo y marco narrativo inicial
-2. Seis volumenes extensos de biblia auditados y reparados antes de ser canonicos
-3. Creacion de la estructura de Obsidian
+2. Creacion inmediata de la estructura visible de Obsidian
+3. Seis volumenes extensos de biblia auditados, reparados y guardados visiblemente uno a uno
 4. Wiki de personajes, lugares, organizaciones, objetos, conceptos y eventos auditada por dominio
 5. Fusion de nombres y alias en un registro canonico y validacion del graph
 6. Esquema de capitulos creado desde la biblia y la wiki terminadas
@@ -52,7 +52,8 @@ La IA proporciona los datos de las entidades, pero los enlaces los crea el progr
 despues de registrar notas reales. Los enlaces inexistentes se convierten en texto normal,
 los resolubles se normalizan y el graph se vuelve a validar antes de publicar.
 Cada volumen y dominio debe superar comprobaciones deterministas y una auditoria LLM independiente
-de continuidad, factualidad y taxonomia. Los candidatos fallidos quedan en `.bookgen/checkpoints/`,
+de continuidad, factualidad y taxonomia. Los bloqueos deterministas de alcance fuerzan una reparacion
+antes de gastar otra llamada en una auditoria contradictoria. Los candidatos fallidos quedan en `.bookgen/checkpoints/`,
 se reparan hasta el limite configurado y no se convierten en canon con errores criticos pendientes.
 
 ## Instalacion
@@ -86,7 +87,9 @@ python src/app.py --web
 
 Abre `http://localhost:5000`. Al cambiar `BOOK LANGUAGE` tambien cambian los ejemplos de
 premisa y perfil, estilos, generos, controles y estados. El prompt de control puede estar
-en ingles porque obliga a producir todo el contenido visible en el idioma elegido.
+en ingles porque obliga a producir todo el contenido visible en el idioma elegido. La web
+persiste la preferencia y sincroniza al cargar el selector visible, los ejemplos y el idioma
+enviado al backend, incluso si el navegador restaura el estado anterior del formulario.
 
 La web separa proveedor y modelo. El gestor permite anadir, probar y borrar endpoints
 OpenAI-compatible o Anthropic nativos. Las claves quedan solo en
@@ -164,7 +167,10 @@ En cuanto la IA elige el titulo, la carpeta se renombra atomicamente a partir de
 prompt del usuario nunca se usa como nombre de directorio y las colisiones reciben un sufijo
 numerico. Esa carpeta es directamente un vault de Obsidian. Los resultados intermedios se guardan en
 `.bookgen/checkpoints/`; los seis volumenes visibles son la unica copia canonica de la
-biblia y los portales solo los enlazan. Un fallo posterior no pierde el trabajo completado.
+biblia y los portales solo los enlazan. La estructura visible se crea al terminar el marco y
+cada volumen aprobado aparece inmediatamente en `01 - Nucleo de la obra/`, sin esperar a que
+terminen los seis. Anadir el siguiente volumen no reescribe notas anteriores, por lo que una
+edicion directa del usuario se conserva. Un fallo posterior no pierde el trabajo completado.
 Codex y Claude Code trabajan con esa carpeta como directorio.
 
 ## Pruebas

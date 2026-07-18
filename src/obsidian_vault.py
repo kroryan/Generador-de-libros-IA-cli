@@ -110,6 +110,8 @@ VOLUME_NAMES = {
 
 
 def _split_bible(book_bible: str) -> list[str]:
+    if not str(book_bible).strip():
+        return []
     parts = re.split(r"(?m)^# Volume \d+: .*?\s*$", str(book_bible))
     volumes = [part.strip() for part in parts[1:] if part.strip()]
     if volumes:
@@ -147,6 +149,50 @@ class VaultProject:
         manifest = self.read_manifest()
         paths = manifest.get("book_bible_volumes") or [manifest["book_bible"]]
         return "\n\n".join((self.root / path).read_text(encoding="utf-8") for path in paths)
+
+    def write_bible_volumes(self, volumes: list[tuple[str, str]]) -> None:
+        """Publish accepted bible volumes immediately into the visible Obsidian vault."""
+        manifest = self.read_manifest()
+        language = manifest.get("language", "en")
+        names = VOLUME_NAMES.get(language, VOLUME_NAMES["en"])
+        bible_path = manifest["book_bible"]
+        bible_directory = Path(bible_path).parent
+        previous_paths = set(manifest.get("book_bible_volumes", []))
+        volume_paths = []
+        for index, (_raw_name, body) in enumerate(volumes, 1):
+            name = names[index - 1] if index <= len(names) else f"Volume {index}"
+            path = bible_directory / f"{index:02d} - {name}.md"
+            target = self.root / path
+            if not target.is_file():
+                target.write_text(
+                    "---\ntype: book-bible-volume\n"
+                    f"volume: {index}\nstatus: canonical\n---\n\n# {name}\n\n{body.strip()}\n",
+                    encoding="utf-8",
+                )
+            volume_paths.append(path.as_posix())
+
+        for stale in previous_paths.difference(volume_paths):
+            stale_path = self.root / stale
+            if stale_path.is_file():
+                stale_path.unlink()
+
+        labels = _labels(language)
+        links = "\n".join(
+            f"- [[{path.with_suffix('').as_posix()}|{path.stem}]]"
+            for path in map(Path, volume_paths)
+        )
+        (self.root / f"{bible_path}.md").write_text(
+            f"# {manifest['title']} - {labels['bible']}\n\n{links}\n",
+            encoding="utf-8",
+        )
+        manifest["book_bible_volumes"] = volume_paths
+        self.write_manifest(manifest)
+        self._refresh_portals()
+        self.repair_and_validate_graph()
+
+    def write_bible(self, book_bible: str) -> None:
+        bodies = _split_bible(book_bible)
+        self.write_bible_volumes([(f"Volume {index}", body) for index, body in enumerate(bodies, 1)])
 
     def planning_context(self, max_chars: int = 60000) -> str:
         manifest = self.read_manifest()

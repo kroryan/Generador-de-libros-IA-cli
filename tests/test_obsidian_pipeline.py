@@ -138,6 +138,37 @@ class ObsidianPipelineTests(unittest.TestCase):
         self.assertIn("/Books/Book - Signal Archive/", manifest["chapters"][0]["plan_path"])
         self.assertEqual(manifest["books"][0]["id"], "signal-archive")
 
+    def test_bible_volumes_are_visible_and_incremental(self):
+        project = ObsidianVaultWriter().create(
+            output_directory=self.root, title="Incremental Canon", language="es",
+            metadata={}, framework="Marco", book_bible="",
+        )
+        initial = project.read_manifest()
+        self.assertEqual(initial["book_bible_volumes"], [])
+        self.assertTrue((project.root / f"{initial['book_bible']}.md").is_file())
+
+        project.write_bible_volumes([
+            ("Creative and editorial foundation", "## Premisa\nCanon inicial."),
+        ])
+        first = project.read_manifest()
+        self.assertEqual(len(first["book_bible_volumes"]), 1)
+        first_path = project.root / first["book_bible_volumes"][0]
+        self.assertTrue(first_path.is_file())
+        self.assertIn("Fundamentos creativos", first_path.read_text(encoding="utf-8"))
+        first_path.write_text(
+            first_path.read_text(encoding="utf-8").replace("Canon inicial", "Canon editado por el usuario"),
+            encoding="utf-8",
+        )
+
+        project.write_bible_volumes([
+            ("Creative and editorial foundation", "## Premisa\nCanon inicial."),
+            ("People, actors, and relationships", "## Personas\nReparto canonico."),
+        ])
+        final = project.read_manifest()
+        self.assertEqual(len(final["book_bible_volumes"]), 2)
+        self.assertIn("Canon editado por el usuario", project.read_bible())
+        self.assertEqual(project.validate_links(), [])
+
     def test_graph_is_repaired_and_valid(self):
         self.assertEqual(self.project.validate_links(), [])
         bible = self.project.read_bible()
@@ -416,6 +447,37 @@ class ObsidianPipelineTests(unittest.TestCase):
         manifest = json.loads((project_root / ".bookgen" / "project.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["status"], "failed")
         self.assertIn("wiki service stopped", manifest["error"])
+
+    def test_accepted_bible_volume_is_visible_before_later_volume_failure(self):
+        output = self.root / "books"
+        request = BookGenerationRequest(
+            subject="A station preserves forbidden memories",
+            profile="Adult science-fiction readers",
+            style="Precise",
+            genre="Science fiction",
+            output_path=str(output),
+            output_format="md",
+        )
+
+        def partial_bible(*_args, **kwargs):
+            volumes = [("Creative and editorial foundation", "## Premise\nAccepted visible canon.")]
+            kwargs["on_volume"](1, 6, volumes[0][0], volumes[0][1], volumes)
+            raise RuntimeError("second volume stopped")
+
+        with patch("pipeline.get_foundation", return_value=("Visible Canon", "Framework")), patch(
+            "pipeline.BookBibleChain.run", side_effect=partial_bible
+        ):
+            with self.assertRaisesRegex(RuntimeError, "second volume stopped"):
+                BookGenerationPipeline().run(request)
+
+        project_root = next(output.iterdir())
+        vault = VaultProject(project_root)
+        manifest = vault.read_manifest()
+        self.assertEqual(len(manifest["book_bible_volumes"]), 1)
+        visible = project_root / manifest["book_bible_volumes"][0]
+        self.assertTrue(visible.is_file())
+        self.assertIn("Accepted visible canon", visible.read_text(encoding="utf-8"))
+        self.assertEqual(vault.validate_links(), [])
 
     def test_completed_generation_is_confined_to_one_project(self):
         output = self.root / "books"

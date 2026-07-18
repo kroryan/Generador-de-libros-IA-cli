@@ -185,10 +185,19 @@ class BookGenerationPipeline:
             os.environ["BOOKGEN_PROJECT_DIR"] = str(workspace.root)
             workspace.update(title=title, status="running", current_stage="book_bible")
 
+            self._progress("Creating the visible Obsidian vault foundation...", 7, title=title)
+            project = ObsidianVaultWriter().create(
+                output_directory=output_path, vault_root=workspace.root, title=title,
+                language=language, metadata=request_data, framework=framework,
+                book_bible="",
+            )
+            workspace.update(status="running", current_stage="book_bible", vault_path=".")
+
             bible_volumes: list[tuple[str, str]] = []
             def bible_checkpoint(index, total, name, body, volumes) -> None:
                 bible_volumes[:] = volumes
                 workspace.write_checkpoint(f"bible-{index:02d}-{_checkpoint_name(name)}.md", body)
+                project.write_bible_volumes(volumes)
                 self._progress(
                     f"Canonical bible volume {index}/{total} saved: {name}",
                     8 + int(20 * index / max(1, total)), title=title,
@@ -211,13 +220,8 @@ class BookGenerationPipeline:
                 on_quality=bible_quality_checkpoint,
             )
             workspace.write_checkpoint("bible-complete.md", bible)
-
-            self._progress("Creating the canonical Obsidian vault foundation...", 29, title=title)
-            project = ObsidianVaultWriter().create(
-                output_directory=output_path, vault_root=workspace.root, title=title,
-                language=language, metadata=request_data, framework=framework,
-                book_bible=bible,
-            )
+            project.write_bible(bible)
+            self._progress("Canonical bible complete in the visible Obsidian vault.", 29, title=title)
             workspace.update(status="running", current_stage="wiki", vault_path=".")
 
             def wiki_checkpoint(index, total, domain, items, partial) -> None:

@@ -18,8 +18,8 @@ and prevents later exports from drifting away from the chapter files.
 The generation sequence is:
 
 1. Create an isolated project and generate only the title and foundational framework
-2. Build, audit, and repair six substantial canonical bible volumes
-3. Create the Obsidian vault and its structural notes
+2. Materialize the visible Obsidian vault and its structural notes immediately
+3. Build, audit, repair, and visibly save six substantial canonical bible volumes one by one
 4. Extract, audit, and repair characters, locations, organizations, objects, concepts, and events
 5. Merge names and aliases into one canonical entity registry and validate every graph link
 6. Plan the chapter outline from the completed bible and wiki
@@ -58,7 +58,8 @@ The model supplies canonical entity data, but application code creates wikilinks
 after registering real notes. Before each export, missing links are converted back to
 plain visible text, resolvable links are normalized, and the graph is validated again.
 Every bible volume and wiki domain must pass deterministic checks plus an independent LLM
-continuity/taxonomy audit. Failed candidates are saved in `.bookgen/checkpoints/`, repaired up
+continuity/taxonomy audit. Deterministic scope blockers trigger repair before another audit call,
+so obvious failures do not waste context on a contradictory verdict. Failed candidates are saved in `.bookgen/checkpoints/`, repaired up
 to the configured limit, and never become canon while critical issues remain.
 
 ## Installation
@@ -126,7 +127,9 @@ python src/app.py --web
 
 Open `http://localhost:5000`. The UI defaults to English and includes an explicit book
 language selector for English and Spanish. Changing it also localizes the premise/profile
-examples, styles, genres, controls, and status text. Only one generation runs at a time.
+examples, styles, genres, controls, and status text. The choice is persisted in the browser,
+restored into both the visible control and generation payload, and never inferred from stale
+visual form state. Only one generation runs at a time.
 
 The provider and model selectors are independent. The provider manager can add, test, and
 remove OpenAI-compatible or native Anthropic API endpoints. API keys are stored locally in
@@ -194,9 +197,12 @@ books/<timestamp>-<premise>/
   .bookgen/              manifests, hidden checkpoints, graph repairs, and agent traces
 ```
 
-Each model result is checkpointed immediately under `.bookgen/checkpoints/`. Bible text
-exists once in its six canonical volume notes; portals and indices link to it rather than
-copying it. A later provider or server failure therefore does not discard completed work.
+Each model result is checkpointed immediately under `.bookgen/checkpoints/`. The visible vault
+exists as soon as the framework is ready, and every accepted bible volume is written at once to
+`01 - Story Core/`; users can inspect partial canonical work before the remaining volumes finish.
+Appending a later volume does not rewrite an existing volume note, so direct user edits remain intact.
+Bible text exists once in its six canonical volume notes; portals and indices link to it rather
+than copying it. A later provider or server failure therefore does not discard completed work.
 Codex and Claude Code are launched with this project as their working directory.
 
 ## Context strategy

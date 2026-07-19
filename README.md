@@ -1,4 +1,5 @@
-# CyberNovelist AI [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/CyberNovelist-AI)
+# CyberNovelist AI 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kroryan/CyberNovelist-AI)
 
 CyberNovelist AI is an Obsidian-first long-form book generator. It builds a canonical
 book bible and linked planning wiki before drafting prose, saves every chapter and

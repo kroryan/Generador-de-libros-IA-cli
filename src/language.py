@@ -62,12 +62,14 @@ def language_quality_issues(text: str, language: str | None) -> list[str]:
     if code == "es":
         if re.search(
             r"(?i)\b(?:loyalty\s+vs\.?\s+destiny|pacing|central dramatic question|"
-            r"reader promise|main characters?|sci[ -]?fantasy)\b",
+            r"reader promise|main characters?|sci[ -]?fantasy|scope)\b",
             value,
         ):
             issues.append("Replace English labels or genre terms with natural Spanish equivalents.")
         if re.search(r"(?i)\bimersi[oó]n\b", value):
             issues.append("Correct the Spanish spelling 'Imersión' to 'Inmersión'.")
+        if re.search(r"(?i)\bconflitos?\b", value):
+            issues.append("Replace the Portuguese word 'Conflito' with the Spanish 'Conflicto'.")
     elif re.search(
         r"(?i)\b(?:promesa al lector|personajes principales|pregunta dram[aá]tica|"
         r"ritmo narrativo|fantas[ií]a cient[ií]fica)\b",

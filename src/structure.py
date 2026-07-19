@@ -3,6 +3,7 @@
 import re
 
 from editorial_policy import editorial_policy, is_fiction
+from guidance import guidance_manager
 from language import get_language, language_instruction, language_quality_issues, normalize_language
 from utils import (
     BaseStructureChain,
@@ -51,7 +52,7 @@ minor character, place, organization, vehicle, artifact, or system names not exp
 by the user or live guidance. Do not use placeholder phrases such as TBD, "name to be decided",
 "a definir", or "a decidir". Preserve genuine unknowns as complete questions without provisional
 answers or names. Measurements, dates, and lore belong in the audited bible. Use descriptive
-Markdown headings.
+level-two Markdown headings. Do not repeat the generated title or add a level-one heading.
 {language_instruction}
 
 Subject: {subject}
@@ -87,7 +88,7 @@ Book framework:
                 result,
                 genre,
                 language,
-                user_context="\n".join((str(subject), str(profile))),
+                user_context="\n".join((str(subject), str(profile), guidance_manager.context())),
             )
             if not issues:
                 return result
@@ -105,6 +106,8 @@ def _framework_issues(
     issues = []
     if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < 180 or "##" not in text:
         issues.append("The foundation is too short or lacks descriptive level-two Markdown sections.")
+    if re.search(r"(?m)^#\s+", text):
+        issues.append("Remove the duplicate book title or other level-one heading; the application owns the note title.")
     premature_patterns = (
         r"(?i)\b(?:chapters?|cap[ií]tulos?)\s+\d+\s*[-–—]\s*\d+",
         r"(?i)\b(?:act|acto)\s+[ivx\d]+\b",
@@ -119,6 +122,14 @@ def _framework_issues(
         text,
     ):
         issues.append("It fixes downstream story architecture; the framework may define tensions but not climax or resolution beats.")
+    if is_fiction(genre) and (
+        re.search(
+            r"(?is)\barco\s+completo\b.{0,120}\bde(?:l|\s+la)?\b.{1,100}\b(?:a|al|hacia)\b",
+            text,
+        )
+        or re.search(r"(?is)\bcomplete(?:\s+character)?\s+arc\b.{0,120}\bfrom\b.{1,100}\bto\b", text)
+    ):
+        issues.append("It fixes the protagonist's arc outcome; require a complete arc without deciding its endpoint before story architecture.")
     if is_fiction(genre) and re.search(
         r"(?im)^#{1,4}\s+.*(?:main characters?|personajes principales|timeline|l[ií]nea de tiempo|"
         r"technology ledger|registro de tecnolog|ledger of laws?|registro de leyes|history of|historia de)",
@@ -154,6 +165,14 @@ def _framework_issues(
         issues.append(
             "Replace unresolved placeholder phrases with complete open questions; do not assign provisional names or facts."
         )
+    if re.search(
+        r"(?is)\b(?:nombres?|names?)\b.{0,220}\b(?:durante\s+la\s+escritura|"
+        r"during\s+(?:drafting|writing))\b",
+        text,
+    ):
+        issues.append(
+            "Do not defer canonical names until drafting; the audited people and encyclopedia volumes must establish them first."
+        )
     if is_fiction(genre):
         invented_entities = []
         entity_pattern = re.compile(
@@ -177,6 +196,8 @@ def _framework_issues(
         text,
     )) >= 2:
         issues.append("It locks clusters of arbitrary measurements before the world/domain bible is audited.")
+    if is_fiction(genre) and re.search(r"(?i)\b(?:subnanom[eé]tric[oa]|subnanometric)\b", text):
+        issues.append("It asserts unsupported precision before the world/domain bible can justify and audit it.")
     if is_fiction(genre) and re.search(
         r"(?i)\b(?:bibliograf[ií]a|fuentes? recomendadas?|recommended sources?|academic sources?|"
         r"fuentes acad[eé]micas|reference list)\b", text,

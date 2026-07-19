@@ -191,6 +191,21 @@ def test_framework_preserves_names_explicitly_supplied_by_user():
     assert not any("named world entities" in issue for issue in issues)
 
 
+def test_framework_rejects_observed_h1_arc_outcome_drafting_deferral_and_precision():
+    candidate = (
+        "# El Vortice de los Engranajes\n"
+        "## Promesa\nUn protagonista con un arco completo: de la duda cientifica al reconocimiento de su linaje.\n"
+        "## Roles\nLos nombres de los personajes secundarios se mantendran en libre desarrollo durante la escritura.\n"
+        "## Limites\nLa ingenieria exige precision de escala subnanometrica.\n"
+        + "pregunta abierta " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert any("level-one heading" in issue for issue in issues)
+    assert any("arc outcome" in issue for issue in issues)
+    assert any("until drafting" in issue for issue in issues)
+    assert any("unsupported precision" in issue for issue in issues)
+
+
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):
     monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
     candidate = (
@@ -249,6 +264,39 @@ def test_foundation_gate_rejects_observed_synopsis_and_reversed_cast_table(monke
     issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1, language="es")
     assert any("editorial scope" in issue for issue in issues)
     assert any("encyclopedia/story material" in issue for issue in issues)
+
+
+def test_foundation_allows_high_level_boundary_labels_but_rejects_observed_precision(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    high_level = (
+        "## Premisa\nCiencia y magia deben coexistir.\n"
+        "## Limites del mundo\n**Magia**: tiene un coste.\n**Tecnologia**: funciona sin magia.\n"
+        "## Preguntas\nComo cambia su relacion?\n"
+    )
+    assert not any(
+        "encyclopedia/story material" in issue
+        for issue in _static_bible_issues(high_level, "Fantasia cientifica", 1, "es")
+    )
+
+    precise = high_level + (
+        "## Detalles\nEl motor opera a 10¹² Hz, tolera 0.005 nanometros, genera 20 newtons "
+        "y falla al 70%.\n"
+    )
+    issues = _static_bible_issues(precise, "Fantasia cientifica", 1, "es")
+    assert any("exact fictional measurements" in issue for issue in issues)
+
+
+def test_foundation_rejects_fixed_arc_solution_and_observed_language_leaks(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Promesa\nAlfredo tiene un arco completo: de la duda al reconocimiento de su linaje.\n"
+        "## Tensiones\n**Conflito interno** entre deber y deseo.\n"
+        "## Scope y evidencias\nLa solucion requiere integrar ciencia y magia.\n"
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", 1, "es")
+    assert any("story or character-arc solution" in issue for issue in issues)
+    assert any("English labels" in issue for issue in issues)
+    assert any("Portuguese" in issue for issue in issues)
 
 
 def test_people_volume_flags_ambiguous_shared_parent_claim(monkeypatch):

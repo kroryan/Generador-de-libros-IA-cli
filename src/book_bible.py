@@ -132,7 +132,7 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
             r"requisitos? de personajes?|character requirements?|reparto|cast)\b|"
             r"^\s*(?:[-*]\s+|\d+\.\s+)?\*\*(?:arquetipos?|archetypes?|objetos? clave|"
             r"key objects?|organizaciones?|organizations?|relaciones? temporales?|temporal relations?|"
-            r"tecnolog[ií]a|technology|personajes?|characters?)\*\*",
+            r"personajes?|characters?)\*\*",
             text,
         )
         cast_table = re.search(
@@ -147,13 +147,26 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
                 "chronology, objects, organizations, and construction notes."
             )
         measurements = re.findall(
-            r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
+            r"(?i)(?:\b\d+(?:[.,]\d+)?\s*(?:km|cm|mm|nm|nan[oó]metros?|kg|kelvin|°c|"
+            r"tw|gw|mw|kw|watts?|hz|newtons?|years?|a[nñ]os?|seconds?|segundos?|meters?|metros?)\b|"
+            r"\b\d+(?:[.,]\d+)?\s*%|\b10[⁰¹²³⁴⁵⁶⁷⁸⁹]+\b|\b0[.,]\d+\s*c\b)",
             text,
         )
         if len(measurements) >= 2:
             issues.append(
                 "Remove clusters of exact fictional measurements from foundation volume 1; canonize only "
                 "operationally justified values in the world/domain volume."
+            )
+        if (
+            re.search(
+                r"(?is)\barco\s+completo\b.{0,120}\bde(?:l|\s+la)?\b.{1,100}\b(?:a|al|hacia)\b",
+                text,
+            )
+            or re.search(r"(?is)\bcomplete(?:\s+character)?\s+arc\b.{0,120}\bfrom\b.{1,100}\bto\b", text)
+            or re.search(r"(?i)\b(?:la\s+soluci[oó]n\s+requiere|the\s+solution\s+requires)\b", text)
+        ):
+            issues.append(
+                "Foundation volume 1 fixes a story or character-arc solution. Keep outcomes open until the architecture volume."
             )
     if is_fiction(genre) and volume_index == 2:
         issues.extend(_relationship_consistency_issues(text))
@@ -314,6 +327,8 @@ organizations, and narrative architecture for their dedicated later volumes.
 For fictional volume 1 specifically, a synopsis is out of scope because it would duplicate and
 prematurely constrain the content/story architecture volume. Do not add plot events, a mission
 sequence, named cast tables, biographies, detailed systems, organizations, artifacts, or endings.
+Concise high-level boundary labels such as Magic or Technology are allowed in volume 1; detailed
+subsections, tables, named mechanisms, measurements, and worked examples are not.
 {language_instruction}
 
 Binding genre policy:
@@ -386,6 +401,8 @@ clearly declared fictional worldbuilding merely because it is invented.
 For fictional volume 1, reject every synopsis, plot event, named cast table, biography, detailed
 world mechanism, organization, artifact, chronology, or narrative architecture. These omissions
 are intentional: never request a synopsis or named story detail as missing foundation coverage.
+Do not reject concise high-level boundary principles merely because they are labeled Magic or
+Technology; reject them only when they become detailed systems, tables, measurements, or examples.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}
@@ -434,6 +451,8 @@ of merely removing its measurements or renaming its heading. Never retain text t
 For fictional volume 1, do not add or preserve a synopsis, plot event, named cast table, biography,
 detailed world mechanism, organization, artifact, chronology, or narrative architecture, even if
 the candidate or a previous audit incorrectly asks for one.
+Concise high-level principles labeled Magic or Technology are allowed; preserve those principles
+while deleting detailed subsections, tables, measurements, named mechanisms, and worked examples.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}

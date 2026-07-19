@@ -823,7 +823,7 @@
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message})
                 });
                 input.value = '';
-                addLog(`${copy[currentLanguage].guidanceSent}: ${message}`, false, 'guidance');
+                await pollActivity();
             } catch (error) {
                 addLog(`${copy[currentLanguage].guidanceError}: ${error.message}`, true);
             } finally {

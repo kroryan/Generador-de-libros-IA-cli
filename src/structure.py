@@ -1,5 +1,6 @@
 """Generate the title, narrative framework, and chapter outline."""
 
+import os
 import re
 
 from editorial_policy import editorial_policy, is_fiction
@@ -74,10 +75,12 @@ Quality correction from a previous attempt:
 Book framework:
 """
 
-    def run(self, subject, genre, style, profile, title, language="en"):
+    def run(self, subject, genre, style, profile, title, language="en", on_quality=None):
         print_progress("Generating narrative framework...")
         feedback = "None; this is the first attempt."
-        for _attempt in range(2):
+        max_repairs = max(1, int(os.getenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "2")))
+        last_issues = []
+        for attempt in range(max_repairs + 1):
             result = self.invoke(
                 subject=clean_think_tags(subject), genre=clean_think_tags(genre),
                 style=clean_think_tags(style), profile=clean_think_tags(profile),
@@ -90,10 +93,18 @@ Book framework:
                 language,
                 user_context="\n".join((str(subject), str(profile), guidance_manager.context())),
             )
+            last_issues = issues
+            if on_quality:
+                on_quality(attempt, {
+                    "cycle": attempt,
+                    "passed": not issues,
+                    "issues": issues,
+                }, result)
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
-        raise ValueError("The foundational framework still fixed downstream canon or contained unsupported material after repair")
+        rendered = "; ".join(last_issues) or "quality validation did not pass"
+        raise ValueError(f"The foundational framework failed repair: {rendered}")
 
 
 def _framework_issues(
@@ -159,7 +170,8 @@ def _framework_issues(
         )
     if re.search(
         r"(?i)\b(?:tbd|todo|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
-        r"to\s+be\s+(?:decided|defined|determined)|name\s+pending)\b",
+        r"sin\s+nombre\s+(?:definido|decidido|asignado)|to\s+be\s+(?:decided|defined|determined)|"
+        r"name\s+pending|unnamed|without\s+a\s+name)\b",
         text,
     ):
         issues.append(
@@ -175,16 +187,30 @@ def _framework_issues(
         )
     if is_fiction(genre):
         invented_entities = []
-        entity_pattern = re.compile(
-            r"(?i)\b(?:nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
-            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity)\s+"
-            r"(?:antigua\s+|ancient\s+|llamad[oa]\s+|called\s+|el\s+|la\s+|the\s+)?"
-            r"[*_]{0,2}([A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*){0,3})",
+        entity_kind = (
+            r"nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
+            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity"
         )
-        for match in entity_pattern.finditer(text):
-            name = match.group(1).strip("*_ ")
-            if name.casefold() not in source:
-                invented_entities.append(name)
+        proper_name = (
+            r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*"
+            r"(?:\s+(?:(?:de|del|la|los|las|of|the)\s+)?"
+            r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*){0,3}"
+        )
+        entity_patterns = (
+            re.compile(
+                rf"\b(?i:{entity_kind})\s+(?:(?i:de)\s+(?:(?i:los|las|la|el)\s+)?)?"
+                rf"[*_]{{0,2}}({proper_name})"
+            ),
+            re.compile(
+                rf"\b(?i:{entity_kind})\b[^\n,]{{0,35}},?\s*(?:(?i:la|el|the)\s+)?"
+                rf"[*_]{{1,2}}({proper_name})[*_]{{1,2}}"
+            ),
+        )
+        for pattern in entity_patterns:
+            for match in pattern.finditer(text):
+                name = match.group(1).strip("*_ ")
+                if name.casefold() not in source:
+                    invented_entities.append(name)
         if invented_entities:
             issues.append(
                 "Do not invent named world entities in the framework; defer these names to the audited bible: "
@@ -286,7 +312,18 @@ def get_foundation(subject, genre, style, profile, language="en", on_stage=None)
     title = TitleChain().run(subject, genre, style, profile, language)
     if on_stage:
         on_stage("title", title)
-    framework = FrameworkChain().run(subject, genre, style, profile, title, language)
+    def framework_quality(cycle, report, candidate):
+        if on_stage:
+            on_stage("framework_quality", {
+                **report,
+                "cycle": cycle,
+                "candidate": candidate,
+            })
+
+    framework = FrameworkChain().run(
+        subject, genre, style, profile, title, language,
+        on_quality=framework_quality,
+    )
     if on_stage:
         on_stage("framework", framework)
     return title, framework

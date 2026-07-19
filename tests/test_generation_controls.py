@@ -29,7 +29,7 @@ from editorial_policy import (
     is_historical_fiction,
     is_nonfiction,
 )
-from structure import _framework_issues
+from structure import FrameworkChain, _framework_issues
 from guidance import GuidanceManager
 from novelist_agent import NovelistAgent
 from web_research import read_public_page, search_duckduckgo
@@ -204,6 +204,45 @@ def test_framework_rejects_observed_h1_arc_outcome_drafting_deferral_and_precisi
     assert any("arc outcome" in issue for issue in issues)
     assert any("until drafting" in issue for issue in issues)
     assert any("unsupported precision" in issue for issue in issues)
+
+
+def test_framework_entity_detection_ignores_lowercase_descriptors_and_vs():
+    candidate = (
+        "## Premisa\nUna nave estelar cruza el vacio.\n"
+        "## Tensiones\nOrden vs. Rebelion divide a la sociedad.\n"
+        "La nave estelar, la *Astra Seraphine*, responde a la Orden de los Engranajes.\n"
+        + "pregunta abierta " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    entity_issue = next(issue for issue in issues if "named world entities" in issue)
+    assert "Astra Seraphine" in entity_issue
+    assert "Engranajes" in entity_issue
+    assert "estelar" not in entity_issue
+    assert "vs" not in entity_issue
+
+
+def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(monkeypatch):
+    monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "2")
+    first = "## Roles\nAliado sin nombre definido.\n" + "detalle " * 190
+    second = "## Roles\nAliado unnamed.\n" + "detalle " * 190
+    accepted = "## Roles\nAliado funcional cuya identidad se canonizara en la biblia.\n" + "detalle " * 190
+    reports = []
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[first, second, accepted])):
+        result = FrameworkChain().run(
+            "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
+            on_quality=lambda cycle, report, candidate: reports.append((cycle, report, candidate)),
+        )
+    assert result == accepted.strip()
+    assert [report["passed"] for _, report, _ in reports] == [False, False, True]
+
+
+def test_guidance_ui_uses_only_canonical_server_activity_event():
+    html = (Path(__file__).parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
+    handler = html.split("byId('guidance-form').addEventListener", 1)[1].split(
+        "function startMatrixBackground", 1
+    )[0]
+    assert "await pollActivity();" in handler
+    assert "guidanceSent}: ${message}" not in handler
 
 
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):

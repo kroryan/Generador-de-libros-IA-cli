@@ -173,6 +173,18 @@ class BookGenerationPipeline:
                 elif stage == "framework":
                     workspace.update(status="running", current_stage="framework")
                     workspace.write_checkpoint("02-framework.md", str(value))
+                elif stage == "framework_quality":
+                    report = dict(value)
+                    candidate = str(report.pop("candidate", ""))
+                    cycle = int(report.get("cycle", 0))
+                    stem = f"framework-quality-cycle-{cycle:02d}"
+                    workspace.write_checkpoint(f"{stem}.json", report)
+                    workspace.write_checkpoint(f"{stem}-candidate.md", candidate)
+                    outcome = "passed" if report.get("passed") else "requires repair"
+                    self._progress(
+                        f"Framework quality audit, cycle {cycle + 1}: {outcome}",
+                        6, title=title, project_path=str(workspace.root),
+                    )
 
             self._progress("Generating title and foundational framework...", 5)
             title, framework = get_foundation(

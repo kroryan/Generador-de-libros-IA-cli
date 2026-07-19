@@ -62,7 +62,7 @@ def language_quality_issues(text: str, language: str | None) -> list[str]:
     if code == "es":
         if re.search(
             r"(?i)\b(?:loyalty\s+vs\.?\s+destiny|pacing|central dramatic question|"
-            r"reader promise|main characters?|sci[ -]?fantasy|scope)\b",
+            r"reader promise|main characters?|sci[ -]?fantasy|scope|elder)\b",
             value,
         ):
             issues.append("Replace English labels or genre terms with natural Spanish equivalents.")

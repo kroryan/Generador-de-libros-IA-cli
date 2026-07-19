@@ -81,10 +81,13 @@ Book framework:
         feedback = "None; this is the first attempt."
         max_repairs = max(1, int(os.getenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "2")))
         max_guidance_replays = max(1, int(os.getenv("FRAMEWORK_GUIDANCE_REPLAYS", "2")))
+        max_adaptive_repairs = max(0, int(os.getenv("FRAMEWORK_ADAPTIVE_REPAIRS", "2")))
         guidance_replays = 0
+        adaptive_repairs = 0
         last_issues = []
+        previous_issues = None
         attempt = 0
-        while attempt <= max_repairs + guidance_replays:
+        while attempt <= max_repairs + guidance_replays + adaptive_repairs:
             guidance_before = guidance_manager.context()
             result = self.invoke(
                 subject=clean_think_tags(subject), genre=clean_think_tags(genre),
@@ -107,6 +110,16 @@ Book framework:
                 )
                 if guidance_replays < max_guidance_replays:
                     guidance_replays += 1
+            issue_signature = tuple(issues)
+            at_current_limit = attempt >= max_repairs + guidance_replays + adaptive_repairs
+            if (
+                issues
+                and at_current_limit
+                and adaptive_repairs < max_adaptive_repairs
+                and previous_issues is not None
+                and issue_signature != previous_issues
+            ):
+                adaptive_repairs += 1
             last_issues = issues
             if on_quality:
                 on_quality(attempt, {
@@ -117,6 +130,7 @@ Book framework:
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
+            previous_issues = issue_signature
             attempt += 1
         rendered = "; ".join(last_issues) or "quality validation did not pass"
         raise ValueError(f"The foundational framework failed repair: {rendered}")
@@ -143,9 +157,15 @@ def _framework_issues(
         issues.append("It prematurely plans acts or numbered chapters; keep only pre-bible foundation constraints.")
     if re.search(r"(?im)^#{1,4}\s+(?:ending|final|resolution|resoluci[oó]n|desenlace)\b", text):
         issues.append("It prematurely fixes the ending; leave story outcomes for the audited architecture volume.")
+    story_architecture_text = re.sub(
+        r"(?i)\b(?:sin|without)\s+(?:revelar|reveal(?:ing)?)\s+(?:el\s+|the\s+)?"
+        r"(?:desenlace|final|ending|resolution|resoluci[oó]n)\b",
+        "",
+        text,
+    )
     if is_fiction(genre) and re.search(
         r"(?i)\b(?:climax|cl[ií]max|resolution|resoluci[oó]n|ending|desenlace)\b",
-        text,
+        story_architecture_text,
     ):
         issues.append("It fixes downstream story architecture; the framework may define tensions but not climax or resolution beats.")
     if is_fiction(genre) and (
@@ -157,7 +177,8 @@ def _framework_issues(
     ):
         issues.append("It fixes the protagonist's arc outcome; require a complete arc without deciding its endpoint before story architecture.")
     if is_fiction(genre) and re.search(
-        r"(?i)\b(?:culmin(?:a|ando)\s+en|culminat(?:e|es|ing)\s+in)\b",
+        r"(?i)\b(?:culmin(?:a|ando)\s+en\s+(?!(?:un|una)\s+arco\b)|"
+        r"culminat(?:e|es|ing)\s+in\s+(?!(?:(?:a|an)\s+)?(?:complete\s+)?arc\b))",
         text,
     ):
         issues.append("It states what the story or character arc culminates in; defer that outcome to the architecture volume.")
@@ -177,9 +198,21 @@ def _framework_issues(
         r"(?im)^\|\s*\*\*([^|*]+)\*\*[^|]*\|",
         role_section.group(1) if role_section else "",
     )
+    named_role_rows.extend(re.findall(
+        r"(?im)^\s*[-*]\s+\*\*([^*]+)\*\*",
+        role_section.group(1) if role_section else "",
+    ))
     source = str(user_context).casefold()
+    generic_role = re.compile(
+        r"(?i)^(?:(?:el|la|los|las|un|una)\s+)?(?:protagonistas?|antagonistas?|mentor(?:a|es|as)?|"
+        r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
+        r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardi(?:a|á)n(?:es)?|capit[aá]n(?:es)?|"
+        r"ingenier[oa]s?|aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
+    )
     invented_role_names = [
-        name.strip() for name in named_role_rows if name.strip().casefold() not in source
+        name.strip()
+        for name in named_role_rows
+        if name.strip().casefold() not in source and not generic_role.match(name.strip())
     ]
     if is_fiction(genre) and invented_role_names:
         issues.append(
@@ -191,7 +224,8 @@ def _framework_issues(
     if re.search(r"\bTODO\b", text) or re.search(
         r"(?i)\b(?:tbd|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
         r"sin\s+nombre\s+(?:definido|decidido|asignado)|to\s+be\s+(?:decided|defined|determined)|"
-        r"name\s+pending|unnamed|without\s+a\s+name|si\s+aplica|if\s+applicable)\b",
+        r"name\s+pending|unnamed|without\s+a\s+name|si\s+aplica|if\s+applicable|"
+        r"nombres?\b.{0,80}\b(?:se\s+)?mantienen?\s+abiertos?\s+(?:a|al)\s+desarrollo)\b",
         text,
     ):
         issues.append(
@@ -209,7 +243,8 @@ def _framework_issues(
         invented_entities = []
         entity_kind = (
             r"nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
-            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity"
+            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity|"
+            r"expedici[oó]n|expedition|misi[oó]n|mission|flota|fleet"
         )
         proper_name = (
             r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*"
@@ -219,7 +254,7 @@ def _framework_issues(
         entity_patterns = (
             re.compile(
                 rf"\b(?i:{entity_kind})\s+(?:(?i:de)\s+(?:(?i:los|las|la|el)\s+)?)?"
-                rf"[*_]{{0,2}}({proper_name})"
+                rf"[*_]{{0,2}}[\"“”'‘’]?({proper_name})[\"“”'‘’]?"
             ),
             re.compile(
                 rf"\b(?i:{entity_kind})\b[^\n,]{{0,35}},?\s*(?:(?i:la|el|the)\s+)?"

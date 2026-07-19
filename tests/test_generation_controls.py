@@ -221,6 +221,39 @@ def test_framework_entity_detection_ignores_lowercase_descriptors_and_vs():
     assert "vs" not in entity_issue
 
 
+def test_framework_rejects_named_cast_hidden_in_markdown_bullets():
+    candidate = (
+        "## Requisitos iniciales de personajes y roles\n"
+        "- **Encris**: protagonista aportado por el usuario.\n"
+        "- **Dr. Liora Voss**: astrofisica.\n"
+        "- **Sayeris**: mago de la tripulacion.\n"
+        "- **El equipo de la expedicion**: roles genericos.\n"
+        "- **Antagonistas**: fuerzas genericas.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(
+        candidate, "Fantasia cientifica", "es",
+        user_context="El protagonista se llama Encris.",
+    )
+    cast_issue = next(issue for issue in issues if "named cast" in issue)
+    assert "Encris" not in cast_issue
+    assert "Dr. Liora Voss" in cast_issue
+    assert "Sayeris" in cast_issue
+    assert "equipo" not in cast_issue
+    assert "Antagonistas" not in cast_issue
+
+
+def test_framework_detects_quoted_expedition_and_deferred_secondary_names():
+    candidate = (
+        "## Premisa\nLa expedicion “Astra” atraviesa el vortice.\n"
+        "## Roles\nLos nombres de los personajes secundarios se mantienen abiertos a desarrollo.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert any("Astra" in issue and "named world entities" in issue for issue in issues)
+    assert any("placeholder phrases" in issue for issue in issues)
+
+
 def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(monkeypatch):
     monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "2")
     first = "## Roles\nAliado sin nombre definido.\n" + "detalle " * 190
@@ -234,6 +267,24 @@ def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(mon
         )
     assert result == accepted.strip()
     assert [report["passed"] for _, report, _ in reports] == [False, False, True]
+
+
+def test_framework_adapts_when_last_cycle_has_a_new_issue(monkeypatch):
+    monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "1")
+    monkeypatch.setenv("FRAMEWORK_ADAPTIVE_REPAIRS", "1")
+    first = "## Roles\nAliado sin nombre definido.\n" + "detalle " * 190
+    changed = "## Arco\nLa historia culmina en una eleccion final.\n" + "detalle " * 190
+    accepted = "## Arco\nLa historia mantiene abierto el resultado.\n" + "detalle " * 190
+    reports = []
+    with patch.object(FrameworkChain, "invoke", side_effect=[first, changed, accepted]), patch(
+        "structure.guidance_manager.context", return_value=""
+    ):
+        result = FrameworkChain().run(
+            "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
+            on_quality=lambda cycle, report, candidate: reports.append(report),
+        )
+    assert result == accepted
+    assert [report["passed"] for report in reports] == [False, False, True]
 
 
 def test_framework_replays_when_guidance_arrives_during_model_call(monkeypatch):
@@ -273,6 +324,16 @@ def test_framework_does_not_treat_normal_spanish_todo_as_placeholder():
     assert not any("placeholder phrases" in issue for issue in _framework_issues(
         clean, "Fantasia cientifica", "es"
     ))
+
+
+def test_framework_allows_negative_ending_reference_and_complete_arc_promise():
+    candidate = (
+        "## Promesa\nLa experiencia culmina en un arco completo, sin revelar el desenlace.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert not any("story architecture" in issue for issue in issues)
+    assert not any("culminates" in issue for issue in issues)
 
 
 def test_guidance_ui_uses_only_canonical_server_activity_event():

@@ -51,8 +51,9 @@ Do not plan acts, chapters, scenes, chapter ranges, climax beats, or the ending.
 a bibliography, recommended sources, citations, quotations, or invented evidence. Do not lock
 minor character, place, organization, vehicle, artifact, or system names not explicitly supplied
 by the user or live guidance. Do not use placeholder phrases such as TBD, "name to be decided",
-"a definir", or "a decidir". Preserve genuine unknowns as complete questions without provisional
-answers or names. Measurements, dates, and lore belong in the audited bible. Use descriptive
+"a definir", "a decidir", "sin nombre definido", or "si aplica". Generic role labels need no
+placeholder commentary. Preserve genuine unknowns as complete questions without provisional
+answers or names. Do not state what the character arc culminates in. Measurements, dates, and lore belong in the audited bible. Use descriptive
 level-two Markdown headings. Do not repeat the generated title or add a level-one heading.
 {language_instruction}
 
@@ -79,20 +80,33 @@ Book framework:
         print_progress("Generating narrative framework...")
         feedback = "None; this is the first attempt."
         max_repairs = max(1, int(os.getenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "2")))
+        max_guidance_replays = max(1, int(os.getenv("FRAMEWORK_GUIDANCE_REPLAYS", "2")))
+        guidance_replays = 0
         last_issues = []
-        for attempt in range(max_repairs + 1):
+        attempt = 0
+        while attempt <= max_repairs + guidance_replays:
+            guidance_before = guidance_manager.context()
             result = self.invoke(
                 subject=clean_think_tags(subject), genre=clean_think_tags(genre),
                 style=clean_think_tags(style), profile=clean_think_tags(profile),
                 title=clean_think_tags(title), language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre), quality_feedback=feedback,
             )
+            guidance_after = guidance_manager.context()
             issues = _framework_issues(
                 result,
                 genre,
                 language,
                 user_context="\n".join((str(subject), str(profile), guidance_manager.context())),
             )
+            if guidance_after != guidance_before:
+                issues.insert(
+                    0,
+                    "Live user guidance arrived during this model call. Regenerate the complete "
+                    "framework using the newest guidance before accepting it.",
+                )
+                if guidance_replays < max_guidance_replays:
+                    guidance_replays += 1
             last_issues = issues
             if on_quality:
                 on_quality(attempt, {
@@ -103,6 +117,7 @@ Book framework:
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
+            attempt += 1
         rendered = "; ".join(last_issues) or "quality validation did not pass"
         raise ValueError(f"The foundational framework failed repair: {rendered}")
 
@@ -142,6 +157,11 @@ def _framework_issues(
     ):
         issues.append("It fixes the protagonist's arc outcome; require a complete arc without deciding its endpoint before story architecture.")
     if is_fiction(genre) and re.search(
+        r"(?i)\b(?:culmin(?:a|ando)\s+en|culminat(?:e|es|ing)\s+in)\b",
+        text,
+    ):
+        issues.append("It states what the story or character arc culminates in; defer that outcome to the architecture volume.")
+    if is_fiction(genre) and re.search(
         r"(?im)^#{1,4}\s+.*(?:main characters?|personajes principales|timeline|l[ií]nea de tiempo|"
         r"technology ledger|registro de tecnolog|ledger of laws?|registro de leyes|history of|historia de)",
         text,
@@ -168,10 +188,10 @@ def _framework_issues(
             + ", ".join(dict.fromkeys(invented_role_names))
             + "."
         )
-    if re.search(
-        r"(?i)\b(?:tbd|todo|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
+    if re.search(r"\bTODO\b", text) or re.search(
+        r"(?i)\b(?:tbd|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
         r"sin\s+nombre\s+(?:definido|decidido|asignado)|to\s+be\s+(?:decided|defined|determined)|"
-        r"name\s+pending|unnamed|without\s+a\s+name)\b",
+        r"name\s+pending|unnamed|without\s+a\s+name|si\s+aplica|if\s+applicable)\b",
         text,
     ):
         issues.append(

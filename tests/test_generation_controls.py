@@ -236,6 +236,45 @@ def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(mon
     assert [report["passed"] for _, report, _ in reports] == [False, False, True]
 
 
+def test_framework_replays_when_guidance_arrives_during_model_call(monkeypatch):
+    monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "1")
+    monkeypatch.setenv("FRAMEWORK_GUIDANCE_REPLAYS", "1")
+    generic = "## Roles\nProtagonista dividido entre dos tradiciones.\n" + "detalle " * 190
+    guided = "## Roles\nArcrys es el protagonista vampiro mago.\n" + "detalle " * 190
+    reports = []
+    contexts = ["", "- Arcrys es un vampiro mago", "- Arcrys es un vampiro mago",
+                "- Arcrys es un vampiro mago", "- Arcrys es un vampiro mago",
+                "- Arcrys es un vampiro mago"]
+    with patch.object(FrameworkChain, "invoke", side_effect=[generic, guided]), patch(
+        "structure.guidance_manager.context", side_effect=contexts
+    ):
+        result = FrameworkChain().run(
+            "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
+            on_quality=lambda cycle, report, candidate: reports.append(report),
+        )
+    assert result == guided
+    assert "Live user guidance arrived" in reports[0]["issues"][0]
+    assert [report["passed"] for report in reports] == [False, True]
+
+
+def test_framework_does_not_treat_normal_spanish_todo_as_placeholder():
+    candidate = (
+        "## Alcance\nEl conflicto afecta a todo el sistema estelar.\n"
+        "## Roles\nEl guardian se incluye si aplica y su arco culmina en una eleccion final.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert any("placeholder phrases" in issue for issue in issues)
+    assert any("culminates" in issue for issue in issues)
+    clean = candidate.replace(
+        "El guardian se incluye si aplica y su arco culmina en una eleccion final.",
+        "El guardian plantea una pregunta abierta sobre el conflicto.",
+    )
+    assert not any("placeholder phrases" in issue for issue in _framework_issues(
+        clean, "Fantasia cientifica", "es"
+    ))
+
+
 def test_guidance_ui_uses_only_canonical_server_activity_event():
     html = (Path(__file__).parents[1] / "templates" / "index.html").read_text(encoding="utf-8")
     handler = html.split("byId('guidance-form').addEventListener", 1)[1].split(

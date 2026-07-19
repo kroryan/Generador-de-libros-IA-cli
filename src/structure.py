@@ -56,6 +56,12 @@ def _framework_audit_issue(item: object) -> str:
     if not isinstance(item, dict):
         return str(item)
     problem = str(item.get("problem") or item).strip()
+    category = str(item.get("category", "")).casefold()
+    if category.startswith("unsupported"):
+        return (
+            f"{problem} Required repair: Remove the unsupported claim completely. Do not replace it "
+            "with a possible, broad, general, unspecified, or later-defined equivalent."
+        )
     repair = str(item.get("repair", "")).strip()
     return f"{problem} Required repair: {repair}" if repair else problem
 
@@ -81,10 +87,12 @@ mission event, named law, protocol, mechanism, location, organization, vehicle, 
 story outcome, or world fact not explicitly supplied. A high-level tension, boundary, narrative
 requirement, or complete open question is allowed when it does not answer itself. Generic role
 requirements are allowed, but they must not become characters or settled biographies.
+Generic concepts explicitly present in the premise, such as an unnamed ship or expedition, may be
+restated without adding a name, specification, history, or new function.
 Every repair must remove unsupported canon completely. Never preserve it as a possible,
 provisional, broad, general, unspecified, or later-defined equivalent. An open question is valid
 only when it contains no suggested answer. Check that previously detected defects have not
-survived through paraphrase.
+survived through paraphrase, but do not repeat an earlier issue when its claim is absent now.
 {language_instruction}
 
 Explicit user premise:
@@ -166,6 +174,12 @@ Binding genre policy:
 Quality correction from a previous attempt:
 {quality_feedback}
 
+Previous candidate to revise:
+{previous_candidate}
+
+When a previous candidate is present, edit it minimally instead of composing a new framework.
+Preserve valid wording and remove each rejected claim without inventing replacement canon.
+
 Book framework:
 """
 
@@ -178,6 +192,7 @@ Book framework:
         guidance_replays = 0
         adaptive_repairs = 0
         encountered_issues = []
+        previous_candidate = "None; this is the first framework attempt."
         last_issues = []
         previous_issues = None
         attempt = 0
@@ -188,6 +203,7 @@ Book framework:
                 style=clean_think_tags(style), profile=clean_think_tags(profile),
                 title=clean_think_tags(title), language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre), quality_feedback=feedback,
+                previous_candidate=clean_think_tags(previous_candidate),
             )
             guidance_for_audit = guidance_manager.context()
             user_context = "\n".join((str(subject), str(profile), guidance_for_audit))
@@ -239,6 +255,7 @@ Book framework:
                 "Repair every issue found in any cycle and return the complete framework again. "
                 "Do not reintroduce an earlier defect:\n- " + "\n- ".join(encountered_issues)
             )
+            previous_candidate = result
             previous_issues = issue_signature
             attempt += 1
         rendered = "; ".join(last_issues) or "quality validation did not pass"
@@ -330,6 +347,7 @@ def _framework_issues(
         r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|s[aá]bi[oa]s?|"
         r"herman[oa]s?(?:\s+de\b.*)?|compa[nñ]er[oa]s?(?:\s+de\b.*)?|"
         r"autoridades?|comit[eé]s?(?:\s+de\b.*)?|"
+        r"l[ií]der(?:es)?(?:\s+de\b.*)?|estrategas?|naves?(?:\s+estelares?)?|"
         r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [

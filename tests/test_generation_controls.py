@@ -292,6 +292,8 @@ def test_framework_adapts_when_last_cycle_has_a_new_issue(monkeypatch):
     final_feedback = invoke.call_args_list[2].kwargs["quality_feedback"]
     assert "placeholder phrases" in final_feedback
     assert "culminates" in final_feedback
+    assert invoke.call_args_list[1].kwargs["previous_candidate"] == first
+    assert invoke.call_args_list[2].kwargs["previous_candidate"] == changed
     assert [report["passed"] for report in reports] == [False, False, True]
 
 
@@ -370,6 +372,9 @@ def test_framework_allows_observed_generic_role_labels():
         "- **Compañeros de la expedición**: requisitos colectivos.\n"
         "- **Autoridades**: requisitos institucionales abiertos.\n"
         "- **Comités de regulación**: grupos todavía no canonizados.\n"
+        "- **Líder de la expedición**: requisito funcional.\n"
+        "- **El Estratega**: requisito funcional.\n"
+        "- **Nave estelar**: concepto genérico aportado por la premisa.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
@@ -431,8 +436,9 @@ def test_framework_semantic_audit_repairs_unsupported_character_canon(monkeypatc
     accepted = "## Premisa\nRobert es el protagonista y es brujo.\n" + "detalle " * 190
     audits = [
         {"verdict": "repair", "issues": [{
+            "category": "unsupported canon",
             "problem": "Captain and quantum physicist were not supplied by the user.",
-            "repair": "Keep only that Robert is the protagonist and a witch.",
+            "repair": "Replace it with a possible broad scientific background.",
         }]},
         {"verdict": "pass", "issues": []},
     ]
@@ -446,6 +452,8 @@ def test_framework_semantic_audit_repairs_unsupported_character_canon(monkeypatc
         )
     assert result == accepted
     assert "quantum physicist" in reports[0]["issues"][0]
+    assert "possible broad" not in reports[0]["issues"][0]
+    assert "Remove the unsupported claim completely" in reports[0]["issues"][0]
     assert [report["passed"] for report in reports] == [False, True]
 
 

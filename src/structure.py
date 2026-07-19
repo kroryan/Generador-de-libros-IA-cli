@@ -75,6 +75,10 @@ mission event, named law, protocol, mechanism, location, organization, vehicle, 
 story outcome, or world fact not explicitly supplied. A high-level tension, boundary, narrative
 requirement, or complete open question is allowed when it does not answer itself. Generic role
 requirements are allowed, but they must not become characters or settled biographies.
+Every repair must remove unsupported canon completely. Never preserve it as a possible,
+provisional, broad, general, unspecified, or later-defined equivalent. An open question is valid
+only when it contains no suggested answer. Check that previously detected defects have not
+survived through paraphrase.
 {language_instruction}
 
 Explicit user premise:
@@ -89,16 +93,21 @@ Style: {style}
 Live user guidance already in force:
 {guidance}
 
+Previously detected defects that must remain absent:
+{prior_issues}
+
 Candidate framework:
 {candidate}
 """
 
-    def run(self, subject, genre, style, profile, guidance, candidate, language) -> dict:
+    def run(self, subject, genre, style, profile, guidance, candidate, language,
+            prior_issues="No earlier defects; audit the complete candidate.") -> dict:
         for _attempt in range(2):
             raw = self.invoke(
                 subject=clean_think_tags(str(subject)), genre=clean_think_tags(str(genre)),
                 style=clean_think_tags(str(style)), profile=clean_think_tags(str(profile)),
                 guidance=clean_think_tags(str(guidance or "No live guidance.")),
+                prior_issues=clean_think_tags(str(prior_issues)),
                 candidate=clean_think_tags(str(candidate)),
                 language_instruction=language_instruction(language),
             )
@@ -131,6 +140,8 @@ Do not assign a named person an occupation, rank, skill, affiliation, biography,
 or arc direction unless the user supplied it. Do not convert an unspecified discovery into a
 specific artifact, entity, technology, or explanation. World-rule boundaries must state what the
 bible needs to decide; they must not name or define laws, protocols, mechanisms, or exact rules.
+Never retain unsupported detail by calling it possible, broad, general, unspecified, or something
+to define later. Remove it completely or ask a neutral open question without suggesting an answer.
 {language_instruction}
 
 Subject: {subject}
@@ -182,6 +193,7 @@ Book framework:
             )
             audit = FrameworkQualityAuditChain().run(
                 subject, genre, style, profile, guidance_for_audit, result, language,
+                prior_issues="\n".join(encountered_issues) or "No earlier defects; audit the complete candidate.",
             )
             audit_issues = [_framework_audit_issue(item) for item in audit.get("issues", [])]
             issues = list(dict.fromkeys([*deterministic, *audit_issues]))
@@ -310,6 +322,7 @@ def _framework_issues(
         r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardias?|guardi[aá]n(?:es)?|capit[aá]n(?:es)?|"
         r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
         r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|s[aá]bi[oa]s?|"
+        r"herman[oa]s?(?:\s+de\b.*)?|compa[nñ]er[oa]s?(?:\s+de\b.*)?|"
         r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [
@@ -396,9 +409,17 @@ def _framework_issues(
         issues.append("It locks clusters of arbitrary measurements before the world/domain bible is audited.")
     if is_fiction(genre) and re.search(r"(?i)\b(?:subnanom[eé]tric[oa]|subnanometric)\b", text):
         issues.append("It asserts unsupported precision before the world/domain bible can justify and audit it.")
+    source_reference_text = re.sub(
+        r"(?im)^.*\b(?:no\s+(?:se\s+)?inclu(?:ye|yen|ir)|sin|libre\s+de|evitar|"
+        r"do\s+not\s+include|without|free\s+of|avoid)\b[^\n]*\b(?:bibliograf[ií]a|"
+        r"fuentes?\s+acad[eé]micas?|citas?|referencias?|bibliography|academic\s+sources?|"
+        r"citations?|references?)\b[^\n]*$",
+        "",
+        text,
+    )
     if is_fiction(genre) and re.search(
         r"(?i)\b(?:bibliograf[ií]a|fuentes? recomendadas?|recommended sources?|academic sources?|"
-        r"fuentes acad[eé]micas|reference list)\b", text,
+        r"fuentes acad[eé]micas|reference list)\b", source_reference_text,
     ):
         issues.append("Fiction must not contain real-world source recommendations or claims of academic support.")
     if language:

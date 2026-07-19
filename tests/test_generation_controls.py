@@ -366,6 +366,8 @@ def test_framework_allows_observed_generic_role_labels():
         "- **Guía de campo**: define riesgos que la biblia resolverá.\n"
         "- **Guardia de seguridad**: plantea necesidades de protección.\n"
         "- **Sabio de la tradición**: conserva preguntas históricas.\n"
+        "- **Hermano de Jacobs**: relación aportada por la guía.\n"
+        "- **Compañeros de la expedición**: requisitos colectivos.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
@@ -377,6 +379,19 @@ def test_spanish_framework_flags_portuguese_sabio_spelling():
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
     assert not any("named cast" in issue for issue in issues)
     assert any("Sábio/Sábia" in issue for issue in issues)
+
+
+def test_framework_allows_explicit_prohibition_of_fiction_sources():
+    candidate = (
+        "## Límites de estilo\nNo se incluyen citas, bibliografía ni referencias a fuentes externas.\n"
+        "La historia debe mantenerse libre de fuentes académicas reales.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert not any("source recommendations" in issue for issue in issues)
+    english = "## Style boundaries\nDo not include a bibliography, citations, or academic sources.\n" + "detail " * 190
+    english_issues = _framework_issues(english, "Science fantasy", "en")
+    assert not any("source recommendations" in issue for issue in english_issues)
 
 
 def test_framework_rejects_observed_unsupported_artifact_portals_and_named_laws():
@@ -428,7 +443,7 @@ def test_framework_quality_report_combines_deterministic_and_semantic_issues(mon
     reports = []
     with patch.object(FrameworkChain, "invoke", side_effect=[first, accepted]), patch(
         "structure.guidance_manager.context", return_value=""
-    ), patch("structure.FrameworkQualityAuditChain.run", side_effect=audits):
+    ), patch("structure.FrameworkQualityAuditChain.run", side_effect=audits) as audit:
         result = FrameworkChain().run(
             "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
             on_quality=lambda cycle, report, candidate: reports.append(report),
@@ -437,6 +452,7 @@ def test_framework_quality_report_combines_deterministic_and_semantic_issues(mon
     assert any("placeholder phrases" in issue for issue in reports[0]["deterministic_issues"])
     assert any("Unsupported character rank" in issue for issue in reports[0]["issues"])
     assert reports[0]["audit"]["verdict"] == "repair"
+    assert "Unsupported character rank" in audit.call_args_list[1].kwargs["prior_issues"]
 
 
 def test_framework_semantic_auditor_accepts_strict_json():
@@ -447,6 +463,17 @@ def test_framework_semantic_auditor_accepts_strict_json():
             "Robert es brujo.", "## Premisa\nRobert es brujo.", "es",
         )
     assert result == {"verdict": "pass", "issues": []}
+
+
+def test_framework_semantic_auditor_receives_prior_defects():
+    chain = FrameworkQualityAuditChain()
+    with patch.object(chain, "invoke", return_value='{"verdict":"pass","issues":[]}') as invoke:
+        chain.run(
+            "Premisa", "Fantasia cientifica", "Epico", "Adultos", "Jacobs mató a su hermano.",
+            "## Premisa\nTexto válido.", "es",
+            prior_issues="Do not reintroduce an engineering profession.",
+        )
+    assert "engineering profession" in invoke.call_args.kwargs["prior_issues"]
 
 
 def test_guidance_ui_uses_only_canonical_server_activity_event():

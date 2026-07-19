@@ -29,7 +29,7 @@ from editorial_policy import (
     is_historical_fiction,
     is_nonfiction,
 )
-from structure import FrameworkChain, _framework_issues
+from structure import FrameworkChain, FrameworkQualityAuditChain, _framework_issues
 from guidance import GuidanceManager
 from novelist_agent import NovelistAgent
 from web_research import read_public_page, search_duckduckgo
@@ -260,7 +260,9 @@ def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(mon
     second = "## Roles\nAliado unnamed.\n" + "detalle " * 190
     accepted = "## Roles\nAliado funcional cuya identidad se canonizara en la biblia.\n" + "detalle " * 190
     reports = []
-    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[first, second, accepted])):
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[first, second, accepted])), patch(
+        "structure.FrameworkQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}
+    ):
         result = FrameworkChain().run(
             "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
             on_quality=lambda cycle, report, candidate: reports.append((cycle, report, candidate)),
@@ -276,14 +278,19 @@ def test_framework_adapts_when_last_cycle_has_a_new_issue(monkeypatch):
     changed = "## Arco\nLa historia culmina en una eleccion final.\n" + "detalle " * 190
     accepted = "## Arco\nLa historia mantiene abierto el resultado.\n" + "detalle " * 190
     reports = []
-    with patch.object(FrameworkChain, "invoke", side_effect=[first, changed, accepted]), patch(
+    with patch.object(FrameworkChain, "invoke", side_effect=[first, changed, accepted]) as invoke, patch(
         "structure.guidance_manager.context", return_value=""
+    ), patch(
+        "structure.FrameworkQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}
     ):
         result = FrameworkChain().run(
             "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
             on_quality=lambda cycle, report, candidate: reports.append(report),
         )
     assert result == accepted
+    final_feedback = invoke.call_args_list[2].kwargs["quality_feedback"]
+    assert "placeholder phrases" in final_feedback
+    assert "culminates" in final_feedback
     assert [report["passed"] for report in reports] == [False, False, True]
 
 
@@ -298,6 +305,8 @@ def test_framework_replays_when_guidance_arrives_during_model_call(monkeypatch):
                 "- Arcrys es un vampiro mago"]
     with patch.object(FrameworkChain, "invoke", side_effect=[generic, guided]), patch(
         "structure.guidance_manager.context", side_effect=contexts
+    ), patch(
+        "structure.FrameworkQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}
     ):
         result = FrameworkChain().run(
             "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
@@ -342,10 +351,61 @@ def test_framework_allows_observed_generic_role_labels():
         "- **Coordinador científico**: articula las decisiones del equipo.\n"
         "- **Maestra de arcanos**: representa el conocimiento sobrenatural.\n"
         "- **Explorador de campo**: contrasta ambos métodos.\n"
+        "- **Cartógrafo de sistemas**: formula requisitos de navegación.\n"
+        "- **Historiador mágico**: conserva preguntas sobre el pasado.\n"
+        "- **Guía de campo**: define riesgos que la biblia resolverá.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
     assert not any("named cast" in issue for issue in issues)
+
+
+def test_framework_rejects_observed_unsupported_artifact_portals_and_named_laws():
+    candidate = (
+        "## Premisa\nRobert es brujo y descubre un artefacto desconocido.\n"
+        "## Límites del mundo\n**Ley de Convergencia**: regula los portales de energía.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(
+        candidate, "Fantasia cientifica", "es",
+        user_context="El protagonista se llama Robert y es brujo. La expedición descubre algo.",
+    )
+    assert any("named world entities" in issue and "Convergencia" in issue for issue in issues)
+    assert any("unsupported concrete" in issue and "artifact" in issue and "portal" in issue for issue in issues)
+
+
+def test_framework_semantic_audit_repairs_unsupported_character_canon(monkeypatch):
+    monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "1")
+    first = "## Premisa\nRobert es brujo, capitán y físico cuántico.\n" + "detalle " * 190
+    accepted = "## Premisa\nRobert es el protagonista y es brujo.\n" + "detalle " * 190
+    audits = [
+        {"verdict": "repair", "issues": [{
+            "problem": "Captain and quantum physicist were not supplied by the user.",
+            "repair": "Keep only that Robert is the protagonist and a witch.",
+        }]},
+        {"verdict": "pass", "issues": []},
+    ]
+    reports = []
+    with patch.object(FrameworkChain, "invoke", side_effect=[first, accepted]), patch(
+        "structure.guidance_manager.context", return_value="Robert es el protagonista y es brujo."
+    ), patch("structure.FrameworkQualityAuditChain.run", side_effect=audits):
+        result = FrameworkChain().run(
+            "Una expedición descubre algo.", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
+            on_quality=lambda cycle, report, candidate: reports.append(report),
+        )
+    assert result == accepted
+    assert "quantum physicist" in reports[0]["issues"][0]
+    assert [report["passed"] for report in reports] == [False, True]
+
+
+def test_framework_semantic_auditor_accepts_strict_json():
+    response = '{"verdict":"PASS","issues":[]}'
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[response])):
+        result = FrameworkQualityAuditChain().run(
+            "Una expedición descubre algo.", "Fantasia cientifica", "Epico", "Adultos",
+            "Robert es brujo.", "## Premisa\nRobert es brujo.", "es",
+        )
+    assert result == {"verdict": "pass", "issues": []}
 
 
 def test_guidance_ui_uses_only_canonical_server_activity_event():

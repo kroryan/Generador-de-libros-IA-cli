@@ -1,5 +1,6 @@
 """Generate the title, narrative framework, and chapter outline."""
 
+import json
 import os
 import re
 
@@ -39,6 +40,77 @@ Title:
         ).strip().strip('"')
 
 
+def _framework_audit_payload(raw: str) -> dict | None:
+    match = re.search(r"\{.*\}", str(raw), re.DOTALL)
+    if not match:
+        return None
+    try:
+        payload = json.loads(match.group(0))
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _framework_audit_issue(item: object) -> str:
+    if not isinstance(item, dict):
+        return str(item)
+    problem = str(item.get("problem") or item).strip()
+    repair = str(item.get("repair", "")).strip()
+    return f"{problem} Required repair: {repair}" if repair else problem
+
+
+class FrameworkQualityAuditChain(BaseStructureChain):
+    PROMPT_TEMPLATE = """
+Act as an adversarial scope and canon auditor for a compact pre-bible book framework. Compare
+the candidate only with the user's explicit premise, reader/profile brief, genre, style, and
+live guidance. The generated title is not evidence for additional canon. Do not rewrite the
+framework and do not invent facts.
+
+Return valid JSON only:
+{{"verdict":"pass or repair","issues":[{{"category":"unsupported canon, scope, character, world, architecture, language, or format","severity":"critical or major","problem":"specific unsupported claim","repair":"specific removal or conversion into an open requirement"}}]}}
+Keep keys and verdict tokens in English. Use repair when the candidate assigns a user-supplied
+person any occupation, rank, skill, affiliation, biography, knowledge, power, relationship, or
+arc direction that the user did not state. Also repair any concrete artifact, discovery answer,
+mission event, named law, protocol, mechanism, location, organization, vehicle, measurement,
+story outcome, or world fact not explicitly supplied. A high-level tension, boundary, narrative
+requirement, or complete open question is allowed when it does not answer itself. Generic role
+requirements are allowed, but they must not become characters or settled biographies.
+{language_instruction}
+
+Explicit user premise:
+{subject}
+
+Reader/profile brief:
+{profile}
+
+Genre: {genre}
+Style: {style}
+
+Live user guidance already in force:
+{guidance}
+
+Candidate framework:
+{candidate}
+"""
+
+    def run(self, subject, genre, style, profile, guidance, candidate, language) -> dict:
+        for _attempt in range(2):
+            raw = self.invoke(
+                subject=clean_think_tags(str(subject)), genre=clean_think_tags(str(genre)),
+                style=clean_think_tags(str(style)), profile=clean_think_tags(str(profile)),
+                guidance=clean_think_tags(str(guidance or "No live guidance.")),
+                candidate=clean_think_tags(str(candidate)),
+                language_instruction=language_instruction(language),
+            )
+            payload = _framework_audit_payload(raw)
+            verdict = str(payload.get("verdict", "")).casefold() if payload else ""
+            if payload and verdict in {"pass", "repair"}:
+                payload["verdict"] = verdict
+                payload["issues"] = payload.get("issues", []) if isinstance(payload.get("issues", []), list) else []
+                return payload
+        raise ValueError("The framework semantic quality audit returned invalid JSON twice")
+
+
 class FrameworkChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
 Create a compact foundation seed appropriate to this book's genre. The six-volume bible will
@@ -55,6 +127,10 @@ by the user or live guidance. Do not use placeholder phrases such as TBD, "name 
 placeholder commentary. Preserve genuine unknowns as complete questions without provisional
 answers or names. Do not state what the character arc culminates in. Measurements, dates, and lore belong in the audited bible. Use descriptive
 level-two Markdown headings. Do not repeat the generated title or add a level-one heading.
+Do not assign a named person an occupation, rank, skill, affiliation, biography, special knowledge,
+or arc direction unless the user supplied it. Do not convert an unspecified discovery into a
+specific artifact, entity, technology, or explanation. World-rule boundaries must state what the
+bible needs to decide; they must not name or define laws, protocols, mechanisms, or exact rules.
 {language_instruction}
 
 Subject: {subject}
@@ -84,6 +160,7 @@ Book framework:
         max_adaptive_repairs = max(0, int(os.getenv("FRAMEWORK_ADAPTIVE_REPAIRS", "2")))
         guidance_replays = 0
         adaptive_repairs = 0
+        encountered_issues = []
         last_issues = []
         previous_issues = None
         attempt = 0
@@ -95,13 +172,26 @@ Book framework:
                 title=clean_think_tags(title), language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre), quality_feedback=feedback,
             )
-            guidance_after = guidance_manager.context()
-            issues = _framework_issues(
+            guidance_for_audit = guidance_manager.context()
+            user_context = "\n".join((str(subject), str(profile), guidance_for_audit))
+            deterministic = _framework_issues(
                 result,
                 genre,
                 language,
-                user_context="\n".join((str(subject), str(profile), guidance_manager.context())),
+                user_context=user_context,
             )
+            if deterministic:
+                audit = {
+                    "verdict": "repair", "issues": [],
+                    "skipped": "Deterministic blockers must be repaired before semantic auditing.",
+                }
+            else:
+                audit = FrameworkQualityAuditChain().run(
+                    subject, genre, style, profile, guidance_for_audit, result, language,
+                )
+            audit_issues = [_framework_audit_issue(item) for item in audit.get("issues", [])]
+            issues = list(dict.fromkeys([*deterministic, *audit_issues]))
+            guidance_after = guidance_manager.context()
             if guidance_after != guidance_before:
                 issues.insert(
                     0,
@@ -111,6 +201,7 @@ Book framework:
                 if guidance_replays < max_guidance_replays:
                     guidance_replays += 1
             issue_signature = tuple(issues)
+            encountered_issues = list(dict.fromkeys([*encountered_issues, *issues]))
             at_current_limit = attempt >= max_repairs + guidance_replays + adaptive_repairs
             if (
                 issues
@@ -126,10 +217,16 @@ Book framework:
                     "cycle": attempt,
                     "passed": not issues,
                     "issues": issues,
+                    "deterministic_issues": deterministic,
+                    "audit": audit,
+                    "adaptive_repairs": adaptive_repairs,
                 }, result)
             if not issues:
                 return result
-            feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
+            feedback = (
+                "Repair every issue found in any cycle and return the complete framework again. "
+                "Do not reintroduce an earlier defect:\n- " + "\n- ".join(encountered_issues)
+            )
             previous_issues = issue_signature
             attempt += 1
         rendered = "; ".join(last_issues) or "quality validation did not pass"
@@ -210,6 +307,7 @@ def _framework_issues(
         r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
         r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardi(?:a|á)n(?:es)?|capit[aá]n(?:es)?|"
         r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
+        r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|"
         r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [
@@ -247,7 +345,8 @@ def _framework_issues(
         entity_kind = (
             r"nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
             r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity|"
-            r"expedici[oó]n|expedition|misi[oó]n|mission|flota|fleet"
+            r"expedici[oó]n|expedition|misi[oó]n|mission|flota|fleet|ley|law|c[oó]digo|code|"
+            r"protocolo|protocol|mecanismo|mechanism"
         )
         proper_name = (
             r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*"
@@ -274,6 +373,19 @@ def _framework_issues(
                 "Do not invent named world entities in the framework; defer these names to the audited bible: "
                 + ", ".join(dict.fromkeys(invented_entities))
                 + "."
+            )
+        unsupported_concrete_terms = []
+        for label, pattern in (
+            ("artifact or relic", r"(?i)\b(?:artefactos?|artifacts?|reliquias?|relics?)\b"),
+            ("portal", r"(?i)\b(?:portales?|portals?)\b"),
+        ):
+            if re.search(pattern, text) and not re.search(pattern, user_context):
+                unsupported_concrete_terms.append(label)
+        if unsupported_concrete_terms:
+            issues.append(
+                "The framework turns an unspecified premise into unsupported concrete story/world material: "
+                + ", ".join(unsupported_concrete_terms)
+                + ". Keep it as an open requirement for the audited bible."
             )
     if is_fiction(genre) and len(re.findall(
         r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",

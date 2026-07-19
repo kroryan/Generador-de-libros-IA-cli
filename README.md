@@ -17,7 +17,7 @@ and prevents later exports from drifting away from the chapter files.
 
 The generation sequence is:
 
-1. Create an isolated project and generate only the title and foundational framework
+1. Create an isolated project, generate the title, and semantically audit the foundational framework against the exact user request
 2. Materialize the visible Obsidian vault with the generated framework, without empty notes
 3. Build, audit, repair, and visibly save six substantial canonical bible volumes one by one
 4. Extract, audit, and repair characters, locations, organizations, objects, concepts, and events

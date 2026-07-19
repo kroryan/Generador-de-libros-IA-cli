@@ -11,7 +11,7 @@ estan soportados durante todo el flujo.
 
 ## Flujo de generacion
 
-1. Carpeta aislada, titulo y marco narrativo inicial
+1. Carpeta aislada, titulo y auditoria semantica del marco inicial contra la peticion exacta del usuario
 2. Creacion inmediata del vault visible con el marco generado, sin notas vacias
 3. Seis volumenes extensos de biblia auditados, reparados y guardados visiblemente uno a uno
 4. Wiki de personajes, lugares, organizaciones, objetos, conceptos y eventos auditada por dominio

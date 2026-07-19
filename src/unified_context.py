@@ -472,15 +472,19 @@ class UnifiedContextManager:
         chapter_summary = self._create_intelligent_chapter_summary(
             full_chapter, chapter_title, chapter_number, total_chapters
         )
-        
-        # Actualizar memoria global
-        self._update_global_memory(chapter_summary, chapter_key, chapter_title)
-        
-        # Limpiar contenido del capítulo actual
-        self.current_chapter_content = []
-        self.section_count = 0
+        self.record_completed_chapter(chapter_key, chapter_title, chapter_summary)
         
         return chapter_summary
+
+    def record_completed_chapter(self, chapter_key: str, chapter_title: str, summary: str) -> None:
+        """Commit an accepted chapter summary before any later chapter can be drafted."""
+        if chapter_key not in self.chapter_contexts:
+            self.register_chapter(chapter_key, chapter_title, summary)
+        self.chapter_contexts[chapter_key]["title"] = chapter_title
+        self.chapter_contexts[chapter_key]["summary"] = summary
+        self._update_global_memory(summary, chapter_key, chapter_title)
+        self.current_chapter_content = []
+        self.section_count = 0
     
     def _create_intelligent_chapter_summary(
         self,

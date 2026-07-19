@@ -24,14 +24,15 @@ BIBLE_VOLUMES = (
         "For fiction: main, opposing, and supporting cast, goals, wounds, voices, histories, secrets, "
         "knowledge states, relationships, and arcs. For nonfiction: relevant historical people, witnesses, "
         "experts, institutions, schools of thought, roles, documented positions, disputes, and evidentiary limits. "
-        "Use stable unique names and never invent biography presented as fact.",
+        "For fiction, create stable unique names from the requested premise and genre. For nonfiction, include "
+        "only identities supported by user material or research and never invent biography presented as fact.",
     ),
     (
         "World and domain encyclopedia",
-        "Geography or subject domain; locations; territories; cultures; society; politics; economics; religions and myths; "
-        "history; technology; magic or powers with costs and limits; nature; everyday life; travel and time. "
-        "For nonfiction distinguish documented fact, interpretation, and open research. State concrete rules and "
-        "sensory or operational details rather than generic possibilities.",
+        "Document only domains materially applicable to this book. For fiction this may include geography, locations, "
+        "cultures, society, history, technology, speculative systems, nature, daily life, travel, and time. For "
+        "nonfiction, map the actual subject domain and distinguish documented fact, interpretation, and open research. "
+        "Do not manufacture a category merely because it appears in these instructions.",
     ),
     (
         "Content and story architecture",
@@ -41,9 +42,9 @@ BIBLE_VOLUMES = (
     ),
     (
         "Organizations, objects, and concepts",
-        "Governments; factions; companies; orders; clandestine groups; important objects; weapons; artifacts; "
-        "documents; vehicles; substances; terminology; source types; historical events. Define resources, constraints, "
-        "relationships, ownership, public versions, and hidden truths.",
+        "Catalog only organizations, objects, documents, terminology, systems, sources, or events that the accepted "
+        "canon materially requires. Define their constraints and relationships. Omit inapplicable categories instead "
+        "of filling them with generic or invented entries.",
     ),
     (
         "Continuity and writing control",
@@ -55,12 +56,12 @@ BIBLE_VOLUMES = (
 
 
 WIKI_DOMAINS = {
-    "characters": "8-16 relevant fictional characters, historical people, experts, witnesses, thinkers, or institutional actors",
-    "locations": "8-16 concrete locations, regions, nations, settlements, buildings or other places",
-    "organizations": "4-10 governments, factions, families, companies, orders, religions or clandestine groups",
-    "objects": "5-12 important objects, weapons, artifacts, documents, vehicles or substances",
-    "concepts": "5-12 named systems, terminology, customs, technologies, powers, laws or abstract concepts",
-    "events": "6-14 historical, conceptual, or planned events that materially shape the book",
+    "characters": "all materially relevant people, characters, witnesses, thinkers, or institutional actors; return zero when canon justifies none",
+    "locations": "all materially relevant concrete places or regions; return zero when canon justifies none",
+    "organizations": "all materially relevant organizations or organized groups; return zero when canon justifies none",
+    "objects": "all materially relevant physical objects, documents, vehicles, or substances; return zero when canon justifies none",
+    "concepts": "all materially relevant named systems, terminology, customs, laws, methods, or abstract concepts; return zero when canon justifies none",
+    "events": "all materially relevant historical, conceptual, or planned events; return zero when canon justifies none",
 }
 
 
@@ -79,8 +80,11 @@ def _audit_issue_text(item: object) -> str:
     if not isinstance(item, dict):
         return str(item)
     problem = str(item.get("problem") or item).strip()
-    repair = str(item.get("repair", "")).strip()
-    return f"{problem} Required repair: {repair}" if repair else problem
+    repair = (
+        "Resolve this defect using only the canonical inputs and previously accepted volumes. "
+        "Remove unsupported claims without replacing them with new claims."
+    )
+    return f"{problem} Required repair: {repair}"
 
 
 def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
@@ -122,6 +126,8 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
             r"history of|historia de|verified facts?|hechos verificados|sources? of|fuentes de|"
             r"narrative devices?|dispositivos narrativos|plot synopsis|synopsis|sinopsis|"
             r"narrative structure|estructura narrativa|character requirements?|requisitos? de personajes?|"
+            r"world rules?|reglas? del mundo|l[ií]mites? de reglas?|"
+            r"research obligations?|obligaciones? de investigaci[oó]n|internal evidence|evidencia interna|"
             r"cast|reparto)",
             text,
         )
@@ -135,10 +141,11 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
             r"construction notes?|objetos? clave|key objects?|organizaciones?|organizations?|"
             r"relaciones? temporales?|temporal relations?|sistema estelar|stellar system|"
             r"tecnolog[ií]a|technology|sinopsis|synopsis|estructura narrativa|narrative structure|"
-            r"requisitos? de personajes?|character requirements?|reparto|cast)\b|"
+            r"reglas? del mundo|world rules?|obligaciones? de investigaci[oó]n|research obligations?|"
+            r"evidencia interna|internal evidence|requisitos? de personajes?|character requirements?|reparto|cast)\b|"
             r"^\s*(?:[-*]\s+|\d+\.\s+)?\*\*(?:arquetipos?|archetypes?|objetos? clave|"
             r"key objects?|organizaciones?|organizations?|relaciones? temporales?|temporal relations?|"
-            r"personajes?|characters?)\*\*",
+            r"personajes?|characters?):?\*\*",
             text,
         )
         cast_table = re.search(
@@ -169,6 +176,11 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
                 text,
             )
             or re.search(r"(?is)\bcomplete(?:\s+character)?\s+arc\b.{0,120}\bfrom\b.{1,100}\bto\b", text)
+            or re.search(
+                r"(?is)\b(?:arco(?:\s+de\s+personaje)?|character\s+arc)\b[^\n]{0,140}"
+                r"\b(?:desde|from)\b[^\n]{1,100}\b(?:hasta|to)\b",
+                text,
+            )
             or re.search(r"(?i)\b(?:la\s+soluci[oó]n\s+requiere|the\s+solution\s+requires)\b", text)
         ):
             issues.append(
@@ -336,6 +348,11 @@ prematurely constrain the content/story architecture volume. Do not add plot eve
 sequence, named cast tables, biographies, detailed systems, organizations, artifacts, or endings.
 Concise high-level boundary labels such as Magic or Technology are allowed in volume 1; detailed
 subsections, tables, named mechanisms, measurements, and worked examples are not.
+For fictional volume 1, use only these concerns: premise contract; reader promise; genre and
+audience; themes and open questions; tone and style boundaries; scope boundaries and unresolved
+requirements. Scope boundaries state what later volumes must decide, never what the answer is.
+Do not include world-rule, research/evidence, continuity, or narrative-architecture sections.
+Never state the start-to-end solution of a character arc.
 {language_instruction}
 
 Binding genre policy:
@@ -362,13 +379,18 @@ Return this volume with descriptive level-two and level-three Markdown headings.
     def run(self, volume_name, volume_index, volume_total, requirements, subject, genre, style,
             profile, title, framework, prior_canon, language):
         minimum = int(os.getenv("BIBLE_VOLUME_MIN_WORDS", "500"))
+        target_words = (
+            os.getenv("BIBLE_FOUNDATION_TARGET_WORDS", "700")
+            if is_fiction(genre) and volume_index == 1
+            else os.getenv("BIBLE_VOLUME_TARGET_WORDS", "1400")
+        )
         best = ""
         feedback = "None; this is the first attempt."
         for _attempt in range(2):
             best = self.invoke(
                 volume_name=volume_name, requirements=requirements,
                 volume_index=volume_index, volume_total=volume_total,
-                target_words=os.getenv("BIBLE_VOLUME_TARGET_WORDS", "1400"),
+                target_words=target_words,
                 language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre),
                 subject=clean_think_tags(str(subject)), genre=clean_think_tags(str(genre)),
@@ -439,9 +461,18 @@ Candidate volume:
             payload = _json_object(raw)
             verdict = str(payload.get("verdict", "")).casefold() if payload else ""
             if payload and verdict in {"pass", "repair"}:
-                payload["verdict"] = verdict
                 issues = payload.get("issues", [])
-                payload["issues"] = issues if isinstance(issues, list) else []
+                valid_issues = (
+                    isinstance(issues, list)
+                    and all(
+                        isinstance(item, dict) and str(item.get("problem", "")).strip()
+                        for item in issues
+                    )
+                )
+                if not valid_issues or (verdict == "repair" and not issues):
+                    continue
+                payload["verdict"] = verdict
+                payload["issues"] = issues
                 return payload
         raise ValueError(f"Quality audit for bible volume '{volume_name}' returned invalid JSON twice")
 
@@ -461,6 +492,13 @@ detailed world mechanism, organization, artifact, chronology, or narrative archi
 the candidate or a previous audit incorrectly asks for one.
 Concise high-level principles labeled Magic or Technology are allowed; preserve those principles
 while deleting detailed subsections, tables, measurements, named mechanisms, and worked examples.
+For fictional volume 1, discard the candidate's organization and rebuild a clean foundation using
+only these sections: premise contract; reader promise; genre and audience; themes and open
+questions; tone and style boundaries; scope boundaries and unresolved requirements. Scope
+boundaries may only defer decisions to later volumes; they must not answer those decisions.
+Do not include world-rule, research/evidence, continuity, or narrative-architecture sections.
+Do not state a start-to-end character arc solution. A compact complete replacement is preferable
+to padding the foundation with material owned by later volumes.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}
@@ -500,14 +538,28 @@ class BookBibleChain:
         prior_limit = int(os.getenv("BIBLE_PRIOR_CONTEXT_CHARS", "24000"))
         for index, (name, requirements) in enumerate(BIBLE_VOLUMES, 1):
             prior = _balanced_volume_context(volumes, prior_limit)
-            candidate = BibleVolumeChain().run(
-                name, index, len(BIBLE_VOLUMES), requirements, subject, genre, style, profile, title, framework,
-                prior, language,
-            )
-            body = self._quality_gate(
-                candidate, name, index, requirements, subject, genre, framework,
-                prior, language, on_quality,
-            )
+            if index == 1:
+                body = str(framework).strip()
+                if on_quality:
+                    on_quality(index, len(BIBLE_VOLUMES), name, 0, {
+                        "volume": name,
+                        "volume_index": index,
+                        "cycle": 0,
+                        "passed": True,
+                        "deterministic": True,
+                        "deterministic_issues": [],
+                        "audit": {"verdict": "pass", "issues": []},
+                        "adaptive_repairs": 0,
+                    }, body)
+            else:
+                candidate = BibleVolumeChain().run(
+                    name, index, len(BIBLE_VOLUMES), requirements, subject, genre, style, profile, title, framework,
+                    prior, language,
+                )
+                body = self._quality_gate(
+                    candidate, name, index, requirements, subject, genre, framework,
+                    prior, language, on_quality,
+                )
             volumes.append((name, body))
             if on_volume:
                 on_volume(index, len(BIBLE_VOLUMES), name, body, volumes)
@@ -588,7 +640,12 @@ application code will keep only targets that receive real notes.
 Never create a second entity for a concept already present in the canonical entity catalog.
 Reuse its exact canonical name and put alternate terminology in aliases. A related aspect,
 rule, title, or former name is not a separate entity unless the bible clearly treats it as one.
+An empty items list is correct only when this domain has no materially relevant entity in the
+accepted canon. Never invent entries to reach a quota.
 {language_instruction}
+
+Selected genre: {genre}
+Binding genre and factuality policy: {genre_policy}
 
 Canonical entity catalog already accepted from earlier domains:
 {entity_catalog}
@@ -601,20 +658,23 @@ Canonical bible:
 """
 
     def run(self, domain: str, quantity: str, book_bible: str, language: str,
-            entity_catalog: str = "None yet.", on_quality=None) -> list[dict]:
+            entity_catalog: str = "None yet.", on_quality=None, genre: str = "") -> list[dict]:
         feedback = "None; this is the first attempt."
         max_repairs = max(1, int(os.getenv("WIKI_QUALITY_MAX_REPAIRS", "2")))
         for attempt in range(max_repairs + 1):
             raw = self.invoke(
                 domain=domain, quantity=quantity, language_instruction=language_instruction(language),
                 book_bible=clean_think_tags(book_bible), entity_catalog=clean_think_tags(entity_catalog),
-                quality_feedback=feedback,
+                quality_feedback=feedback, genre=clean_think_tags(str(genre)),
+                genre_policy=editorial_policy(genre),
             )
             result = self._parse(raw, domain)
+            payload = _json_object(raw)
+            valid_payload = bool(payload is not None and isinstance(payload.get("items"), list))
             deterministic = _static_wiki_issues(domain, quantity, result)
-            if result:
+            if valid_payload:
                 audit = WikiQualityAuditChain().run(
-                    domain, quantity, book_bible, entity_catalog, result, language,
+                    domain, quantity, book_bible, entity_catalog, result, language, genre,
                 )
             else:
                 audit = {"verdict": "repair", "issues": [{
@@ -622,7 +682,7 @@ Canonical bible:
                 }]}
             audit_issues = [_audit_issue_text(item) for item in audit.get("issues", [])]
             issues = list(dict.fromkeys([*deterministic, *audit_issues]))
-            passed = bool(result) and audit.get("verdict") == "pass" and not issues
+            passed = valid_payload and audit.get("verdict") == "pass" and not issues
             report = {
                 "domain": domain, "cycle": attempt, "passed": passed,
                 "deterministic_issues": deterministic, "audit": audit,
@@ -673,10 +733,15 @@ duplicates an existing entity or alias, contradicts the bible, invents an entity
 necessarily implied by canon, uses a relationship name inconsistent with canonical naming, lacks
 substantial operational detail, or is in the wrong language. Do not reject a valid entity merely
 because some relationships will be created in later domains.
+An empty domain passes only when the accepted bible contains no materially relevant entity of that
+kind. Require repair when an empty list omits a person, place, organization, object, concept, or event
+that the bible establishes and that belongs in this domain.
 {language_instruction}
 
 Domain: {domain}
 Required quantity: {quantity}
+Selected genre: {genre}
+Binding genre and factuality policy: {genre_policy}
 Previously accepted entity catalog:
 {entity_catalog}
 
@@ -687,13 +752,14 @@ Proposed items JSON:
 {candidate_json}
 """
 
-    def run(self, domain, quantity, book_bible, entity_catalog, items, language) -> dict:
+    def run(self, domain, quantity, book_bible, entity_catalog, items, language, genre="") -> dict:
         candidate_json = json.dumps({"items": items}, ensure_ascii=False)
         for _attempt in range(2):
             raw = self.invoke(
                 domain=domain, quantity=quantity, book_bible=clean_think_tags(str(book_bible)),
                 entity_catalog=clean_think_tags(str(entity_catalog)), candidate_json=candidate_json,
-                language_instruction=language_instruction(language),
+                language_instruction=language_instruction(language), genre=clean_think_tags(str(genre)),
+                genre_policy=editorial_policy(genre),
             )
             payload = _json_object(raw)
             verdict = str(payload.get("verdict", "")).casefold() if payload else ""
@@ -706,7 +772,7 @@ Proposed items JSON:
 
 
 class WikiDataChain:
-    def run(self, book_bible, language="en", on_domain=None, on_quality=None):
+    def run(self, book_bible, language="en", on_domain=None, on_quality=None, genre=""):
         language = normalize_language(language)
         result = {}
         context_limit = int(os.getenv("WIKI_BIBLE_CONTEXT_CHARS", "50000"))
@@ -720,6 +786,7 @@ class WikiDataChain:
                 )
             generated = WikiDomainChain().run(
                 domain, quantity, context, language, catalog, on_quality=quality_callback,
+                genre=genre,
             )
             result[domain] = _merge_domain_entities(generated, result)
             if on_domain:
@@ -729,10 +796,6 @@ class WikiDataChain:
 
 def _static_wiki_issues(domain: str, quantity: str, items: list[dict]) -> list[str]:
     issues = []
-    minimum_match = re.search(r"\d+", str(quantity))
-    minimum = int(minimum_match.group(0)) if minimum_match else 1
-    if len(items) < minimum:
-        issues.append(f"Return at least {minimum} usable {domain}; only {len(items)} were parsed.")
     seen = set()
     min_words = int(os.getenv("WIKI_ITEM_MIN_WORDS", "60"))
     for item in items:

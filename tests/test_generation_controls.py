@@ -10,13 +10,16 @@ import pytest
 from langchain_community.llms.fake import FakeListLLM
 
 from generation_control import GenerationCancelled, GenerationControl
-from writing import WriterChain
+from chapter_summary import _fallback_continuity_summary, _summary_is_usable
+from writing import WriterChain, write_book
 from book_bible import (
     BIBLE_VOLUMES,
+    BibleVolumeChain,
     BibleQualityAuditChain,
     BookBibleChain,
     WikiDomainChain,
     _balanced_markdown_excerpt,
+    _audit_issue_text,
     _chunk_source_context,
     _static_bible_issues,
 )
@@ -29,7 +32,13 @@ from editorial_policy import (
     is_historical_fiction,
     is_nonfiction,
 )
-from structure import FrameworkChain, FrameworkQualityAuditChain, _framework_issues
+from structure import (
+    FrameworkChain,
+    FrameworkQualityAuditChain,
+    _framework_issues,
+    _normalize_framework_structure,
+    get_foundation,
+)
 from guidance import GuidanceManager
 from novelist_agent import NovelistAgent
 from web_research import read_public_page, search_duckduckgo
@@ -45,6 +54,52 @@ def test_writer_chain_compiles_selected_template_before_base_init():
 def test_writer_rejects_short_assistant_chatter():
     assert WriterChain._looks_like_assistant_chatter("Hello! How can I assist you today?")
     assert not WriterChain._looks_like_assistant_chatter("Mara crossed the threshold and the archive sealed behind her.")
+
+
+def test_write_book_injects_completed_previous_chapter_summary(monkeypatch):
+    calls = []
+
+    class FakeWriter:
+        llm = object()
+
+        def __init__(self, use_few_shot=True):
+            pass
+
+        def run(self, **kwargs):
+            calls.append(kwargs)
+            return "Narrative prose with enough concrete content. " * 12
+
+    summaries = iter((
+        "FINAL CONTINUITY CHAPTER ONE: Elias leaves the damaged observatory.",
+        "FINAL CONTINUITY CHAPTER TWO: Elias follows the signal.",
+    ))
+    monkeypatch.setattr("writing.WriterChain", FakeWriter)
+    monkeypatch.setattr("writing.ChapterSummaryChain.run", lambda *args, **kwargs: next(summaries))
+    monkeypatch.setattr("writing.SectionQualityMonitor.evaluate_and_store", lambda *args, **kwargs: None)
+    monkeypatch.setattr("writing.time.sleep", lambda *_: None)
+    monkeypatch.setattr("writing._context_config.enable_micro_summaries", False)
+
+    completed = []
+    write_book(
+        "Science fiction", "Precise", "Adults", "Ordered Book", "Framework",
+        {"Chapter 1": "Plan one", "Chapter 2": "Plan two"},
+        {"Chapter 2": ["Follow the signal"], "Chapter 1": ["Leave the observatory"]},
+        language="en", agent_tools=False,
+        on_chapter_complete=lambda chapter, sections, summary: completed.append((chapter, summary)),
+    )
+
+    assert [item[0] for item in completed] == ["Chapter 1", "Chapter 2"]
+    assert "FINAL CONTINUITY CHAPTER ONE" not in calls[0]["summary"]
+    assert "FINAL CONTINUITY CHAPTER ONE" in calls[1]["summary"]
+
+
+def test_chapter_summary_fallback_keeps_grounded_opening_and_final_state():
+    content = "OPENING FACT " + ("middle detail " * 300) + "FINAL STATE"
+    fallback = _fallback_continuity_summary(content, 4, "The Crossing", "en")
+    assert "OPENING FACT" in fallback
+    assert "FINAL STATE" in fallback
+    assert "summary pending" not in fallback
+    assert not _summary_is_usable("Hello! How can I assist you today?")
 
 
 def test_pause_blocks_checkpoint_until_resume():
@@ -109,6 +164,52 @@ def test_genre_policy_separates_fiction_from_nonfiction_sources():
     assert "Never invent quotations" in editorial_policy("Popular science")
 
 
+def test_foundation_is_extractive_and_does_not_call_framework_llm():
+    subject = "USER PREMISE TOKEN"
+    profile = "USER PROFILE TOKEN"
+    with patch.object(FrameworkChain, "run", side_effect=AssertionError("must not run")), patch(
+        "structure.TitleChain.run", return_value="Generated title"
+    ), patch("structure.guidance_manager.context", return_value="USER GUIDANCE TOKEN"):
+        title, framework = get_foundation(
+            subject, "User genre", "User style", profile, "en"
+        )
+    assert title == "Generated title"
+    assert subject in framework
+    assert profile in framework
+    assert "USER GUIDANCE TOKEN" in framework
+    assert "User genre" in framework
+    assert "User style" in framework
+
+
+def test_people_bible_volume_delegates_original_names_and_roles_to_the_model():
+    assert "cast" in BIBLE_VOLUMES[1][1].casefold()
+    assert "goals" in BIBLE_VOLUMES[1][1].casefold()
+    assert "named details" in BibleVolumeChain.PROMPT_TEMPLATE
+
+
+@pytest.mark.parametrize("genre", ["Mystery", "Popular science", "History"])
+def test_every_genre_preserves_extractive_foundation_then_delegates_expansion(genre):
+    accepted = []
+    with patch.object(
+        BibleVolumeChain,
+        "run",
+        side_effect=lambda *args: f"## Model-generated volume {args[1]}",
+    ) as generate, patch.object(
+        BookBibleChain,
+        "_quality_gate",
+        side_effect=lambda candidate, *_args: candidate,
+    ):
+        BookBibleChain().run(
+            "User subject", genre, "User style", "User profile", "Generated title",
+            "## Exact user foundation\n\nNo model expansion here.",
+            on_volume=lambda _index, _total, _name, body, _volumes: accepted.append(body),
+        )
+
+    assert accepted[0] == "## Exact user foundation\n\nNo model expansion here."
+    assert generate.call_count == len(BIBLE_VOLUMES) - 1
+    assert all(body.startswith("## Model-generated volume") for body in accepted[1:])
+
+
 def test_framework_rejects_premature_chapter_plan_and_fiction_bibliography():
     bad = "## Estructura\nActo 1. Capítulos 1-7.\n## Resolución\nTodo termina.\n## Fuentes recomendadas\nNASA Tech Memo. " + "detalle " * 190
     issues = _framework_issues(bad, "Fantasia cientifica")
@@ -130,67 +231,6 @@ def test_framework_rejects_downstream_architecture_and_encyclopedia_material():
     assert any("arbitrary measurements" in issue for issue in issues)
 
 
-def test_framework_rejects_named_cast_hidden_in_role_requirements():
-    bad = (
-        "## **4. Requisitos iniciales de roles de personajes**  \n"
-        "| Rol | Funcion |\n|---|---|\n"
-        "| **Elias Varga** (protagonista) | Ingeniero dividido entre dos tradiciones. |\n"
-        "| **Liora Venn** | Ingeniera de la nave. |\n"
-        "## Preguntas tematicas\n" + "pregunta abierta " * 190
-    )
-    issues = _framework_issues(bad, "Fantasia cientifica")
-    assert any("must not invent a named cast" in issue for issue in issues)
-
-
-def test_framework_rejects_observed_reversed_role_heading_and_language_leaks():
-    bad = (
-        "## Requisitos Iniciales de Personaje y Roles\n"
-        "| Personaje | Rol |\n|---|---|\n"
-        "| **Alfredo** | Protagonista |\n| **Liora** | Ingeniera |\n| **Merik** | Lider |\n"
-        "## Promesa\n- **Imersion sensorial** completa.\n"
-        "## Tensiones\n- **Loyalty vs. Destiny** domina el conflicto.\n"
-        "## Estilo\n- **Pacing** alternado.\n" + "detalle " * 190
-    )
-    issues = _framework_issues(bad, "Fantasia cientifica", "es")
-    assert any("must not invent a named cast" in issue for issue in issues)
-    assert any("English labels" in issue for issue in issues)
-    assert any("Inmersión" in issue for issue in issues)
-
-
-def test_framework_rejects_observed_character_requirements_bypass_and_placeholders():
-    bad = (
-        "## Requisitos de Personajes Iniciales\n"
-        "| Rol | Descripcion | Preguntas |\n|---|---|---|\n"
-        "| **Arion** (Protagonista) | Ingeniero orbital. | Nombre a decidir. |\n"
-        "| **Evelyn** | Capitana. | Motivacion a definir. |\n"
-        "| **Lucio** | Mago de runas. | Secreto por determinar. |\n"
-        "## Mundo\nLa nave *Prometeo* obedece a la Corporacion *AstraTech*.\n"
-        + "pregunta abierta " * 190
-    )
-    issues = _framework_issues(bad, "Fantasia cientifica", "es")
-    assert any("must not invent a named cast" in issue for issue in issues)
-    assert any("placeholder phrases" in issue for issue in issues)
-    assert any("named world entities" in issue for issue in issues)
-
-
-def test_framework_preserves_names_explicitly_supplied_by_user():
-    candidate = (
-        "## Requisitos de Personajes Iniciales\n"
-        "| Rol | Descripcion |\n|---|---|\n"
-        "| **Arion** | Protagonista. |\n| **Evelyn** | Capitana. |\n"
-        "## Limites del mundo\nLa nave *Prometeo* pertenece a la Corporacion *AstraTech*.\n"
-        + "pregunta abierta " * 190
-    )
-    issues = _framework_issues(
-        candidate,
-        "Fantasia cientifica",
-        "es",
-        user_context="Arion, Evelyn, la Prometeo y AstraTech ya existen.",
-    )
-    assert not any("named cast" in issue for issue in issues)
-    assert not any("named world entities" in issue for issue in issues)
-
-
 def test_framework_rejects_observed_h1_arc_outcome_drafting_deferral_and_precision():
     candidate = (
         "# El Vortice de los Engranajes\n"
@@ -203,55 +243,87 @@ def test_framework_rejects_observed_h1_arc_outcome_drafting_deferral_and_precisi
     assert any("level-one heading" in issue for issue in issues)
     assert any("arc outcome" in issue for issue in issues)
     assert any("until drafting" in issue for issue in issues)
-    assert any("unsupported precision" in issue for issue in issues)
 
 
-def test_framework_entity_detection_ignores_lowercase_descriptors_and_vs():
+def test_framework_normalizes_premature_cast_table_before_audit():
     candidate = (
-        "## Premisa\nUna nave estelar cruza el vacio.\n"
-        "## Tensiones\nOrden vs. Rebelion divide a la sociedad.\n"
-        "La nave estelar, la *Astra Seraphine*, responde a la Orden de los Engranajes.\n"
-        + "pregunta abierta " * 190
+        "## Premisa\nElias participa en una expedicion.\n"
+        "## Requisitos de personajes iniciales\n"
+        "| Rol | Descripcion |\n|---|---|\n"
+        "| **Capitan** | Dirige la nave. |\n"
+        "| **Ingeniero principal** | Opera los motores. |\n"
+        "## Limites de estilo\nEl resultado permanece abierto.\n"
+    )
+    normalized = _normalize_framework_structure(candidate, "Fantasia cientifica", "es")
+    assert "Elias participa" in normalized
+    assert "Capitan" not in normalized
+    assert "Ingeniero principal" not in normalized
+    assert "contrato canónico" in normalized
+
+
+def test_framework_normalizes_premature_cast_bullets_before_audit():
+    candidate = (
+        "## Premisa\nElias participa en una expedicion.\n"
+        "## Requisitos de personajes iniciales\n"
+        "- **Elias**: ingeniero y heredero de una linea magica.\n"
+        "- **Compañeros**: especialistas, hechiceros y guardianes.\n"
+        "## Limites\nEl resultado permanece abierto.\n"
+    )
+    normalized = _normalize_framework_structure(candidate, "Fantasia cientifica", "es")
+    assert "Elias participa" in normalized
+    assert "ingeniero y heredero" not in normalized
+    assert "especialistas, hechiceros" not in normalized
+    assert "funciones y relaciones" in normalized
+
+
+def test_framework_normalizes_role_requirements_heading_without_character_word():
+    candidate = (
+        "## Premisa\nElias participa en una expedicion.\n"
+        "## Requisitos de rol iniciales\n"
+        "- **Capitan**: dirige la nave.\n"
+        "- **Maestro de la magia**: conoce todas las leyes.\n"
+        "## Temas\nLa responsabilidad permanece abierta.\n"
+    )
+    normalized = _normalize_framework_structure(candidate, "Fantasia cientifica", "es")
+    assert "dirige la nave" not in normalized
+    assert "conoce todas las leyes" not in normalized
+    assert "Requisitos abiertos de personajes" in normalized
+
+
+def test_framework_normalizes_directed_world_questions_before_audit():
+    candidate = (
+        "## Premisa\nUna expedicion descubre algo desconocido.\n"
+        "## Limites de las reglas del mundo\n"
+        "- ¿Que nucleo de la nave regula la energia magica?\n"
+        "- ¿Como cooperan las academias magicas con las instituciones cientificas?\n"
+        "## Temas\nLa responsabilidad permanece abierta.\n"
+    )
+    normalized = _normalize_framework_structure(candidate, "Fantasia cientifica", "es")
+    assert "nucleo de la nave" not in normalized
+    assert "academias magicas" not in normalized
+    assert "sin presuponer respuestas" in normalized
+
+
+def test_framework_normalizes_world_rules_heading_synonym():
+    candidate = (
+        "## Premisa\nUna expedicion descubre algo.\n"
+        "## Limites de Reglas Mundiales (Preguntas a Decidir)\n"
+        "- ¿Como se controla la energia de los motores?\n"
+        "- ¿Que instituciones regulan la magia?\n"
+        "## Temas\nLa responsabilidad permanece abierta.\n"
+    )
+    normalized = _normalize_framework_structure(candidate, "Fantasia cientifica", "es")
+    assert "instituciones regulan" not in normalized
+    assert "Límites abiertos del dominio" in normalized
+
+
+def test_framework_allows_explicitly_negated_arc_resolution():
+    candidate = (
+        "## Promesa\nEl arco explora decisiones dificiles sin revelar su resolucion final.\n"
+        + "detalle abierto " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
-    entity_issue = next(issue for issue in issues if "named world entities" in issue)
-    assert "Astra Seraphine" in entity_issue
-    assert "Engranajes" in entity_issue
-    assert "estelar" not in entity_issue
-    assert "vs" not in entity_issue
-
-
-def test_framework_rejects_named_cast_hidden_in_markdown_bullets():
-    candidate = (
-        "## Requisitos iniciales de personajes y roles\n"
-        "- **Encris**: protagonista aportado por el usuario.\n"
-        "- **Dr. Liora Voss**: astrofisica.\n"
-        "- **Sayeris**: mago de la tripulacion.\n"
-        "- **El equipo de la expedicion**: roles genericos.\n"
-        "- **Antagonistas**: fuerzas genericas.\n"
-        + "detalle " * 190
-    )
-    issues = _framework_issues(
-        candidate, "Fantasia cientifica", "es",
-        user_context="El protagonista se llama Encris.",
-    )
-    cast_issue = next(issue for issue in issues if "named cast" in issue)
-    assert "Encris" not in cast_issue
-    assert "Dr. Liora Voss" in cast_issue
-    assert "Sayeris" in cast_issue
-    assert "equipo" not in cast_issue
-    assert "Antagonistas" not in cast_issue
-
-
-def test_framework_detects_quoted_expedition_and_deferred_secondary_names():
-    candidate = (
-        "## Premisa\nLa expedicion “Astra” atraviesa el vortice.\n"
-        "## Roles\nLos nombres de los personajes secundarios se mantienen abiertos a desarrollo.\n"
-        + "detalle " * 190
-    )
-    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
-    assert any("Astra" in issue and "named world entities" in issue for issue in issues)
-    assert any("placeholder phrases" in issue for issue in issues)
+    assert not any("downstream story architecture" in issue for issue in issues)
 
 
 def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(monkeypatch):
@@ -414,20 +486,6 @@ def test_framework_allows_explicit_prohibition_of_fiction_sources():
     english = "## Style boundaries\nDo not include a bibliography, citations, or academic sources.\n" + "detail " * 190
     english_issues = _framework_issues(english, "Science fantasy", "en")
     assert not any("source recommendations" in issue for issue in english_issues)
-
-
-def test_framework_rejects_observed_unsupported_artifact_portals_and_named_laws():
-    candidate = (
-        "## Premisa\nRobert es brujo y descubre un artefacto desconocido.\n"
-        "## Límites del mundo\n**Ley de Convergencia**: regula los portales de energía.\n"
-        + "detalle " * 190
-    )
-    issues = _framework_issues(
-        candidate, "Fantasia cientifica", "es",
-        user_context="El protagonista se llama Robert y es brujo. La expedición descubre algo.",
-    )
-    assert any("named world entities" in issue and "Convergencia" in issue for issue in issues)
-    assert any("unsupported concrete" in issue and "artifact" in issue and "portal" in issue for issue in issues)
 
 
 def test_framework_semantic_audit_repairs_unsupported_character_canon(monkeypatch):
@@ -611,6 +669,31 @@ def test_foundation_rejects_fixed_arc_solution_and_observed_language_leaks(monke
     assert any("Portuguese" in issue for issue in issues)
 
 
+def test_foundation_rejects_observed_repair_that_still_leaks_later_volumes(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Premisa y contrato\nCiencia y magia conviven durante una expedicion.\n"
+        "## Promesa al lector\nElias tendra un arco desde la duda interna hasta la aceptacion de su identidad.\n"
+        "## Limites de reglas del mundo\nLa magia solo puede canalizarse mediante componentes resonantes.\n"
+        "## Obligaciones de investigacion y evidencia interna\n"
+        "Cada hecho debe corroborarse con dos registros de la nave.\n"
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", 1, "es")
+    assert any("editorial scope" in issue for issue in issues)
+    assert any("encyclopedia/story material" in issue for issue in issues)
+    assert any("story or character-arc solution" in issue for issue in issues)
+
+
+def test_bible_audit_repairs_cannot_inject_new_claims_from_auditor():
+    rendered = _audit_issue_text({
+        "problem": "A canonical input was omitted.",
+        "repair": "Invent a replacement claim.",
+    })
+    assert "Invent a replacement claim" not in rendered
+    assert "canonical inputs" in rendered
+    assert "without replacing them with new claims" in rendered
+
+
 def test_people_volume_flags_ambiguous_shared_parent_claim(monkeypatch):
     monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
     candidate = (
@@ -697,6 +780,24 @@ def test_bible_auditor_accepts_strict_json_and_normalizes_verdict():
     assert result == {"verdict": "pass", "issues": []}
 
 
+def test_bible_auditor_retries_malformed_repair_issue_objects():
+    malformed = (
+        '{"verdict":"repair","issues":['
+        '{"category":"scope","repair":"Remove the world rule."}]}'
+    )
+    valid = (
+        '{"verdict":"repair","issues":['
+        '{"category":"scope","problem":"A world rule appears too early.",'
+        '"repair":"Remove the world rule."}]}'
+    )
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[malformed, valid])):
+        result = BibleQualityAuditChain().run(
+            "Foundation", 1, 6, "Coverage", "Premise", "Science fiction",
+            "Framework", "No prior canon", "## Candidate\nConcrete canon.", "en",
+        )
+    assert result["issues"][0]["problem"] == "A world rule appears too early."
+
+
 def test_wiki_domain_repairs_semantic_taxonomy_before_accepting(monkeypatch):
     monkeypatch.setenv("WIKI_ITEM_MIN_WORDS", "5")
     monkeypatch.setenv("WIKI_QUALITY_MAX_REPAIRS", "2")
@@ -711,6 +812,23 @@ def test_wiki_domain_repairs_semantic_taxonomy_before_accepting(monkeypatch):
     ):
         items = WikiDomainChain().run("organizations", "1-2 organizations", "Canon", "en")
     assert [item["name"] for item in items] == ["Concordia"]
+
+
+def test_wiki_domain_accepts_audited_empty_category_without_inventing_quota(monkeypatch):
+    monkeypatch.setenv("WIKI_QUALITY_MAX_REPAIRS", "1")
+    with patch("utils.get_llm_model", return_value=FakeListLLM(responses=['{"items":[]}'])), patch(
+        "book_bible.WikiQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}
+    ) as audit:
+        items = WikiDomainChain().run(
+            "organizations",
+            "all materially relevant organizations; return zero when canon justifies none",
+            "## Canon\nNo organization is established.",
+            "en",
+            genre="Essay",
+        )
+
+    assert items == []
+    audit.assert_called_once()
 
 
 def test_balanced_markdown_excerpt_keeps_late_sections_visible():

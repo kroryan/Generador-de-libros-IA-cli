@@ -71,6 +71,51 @@ def _canonical_lookup_text(value: object) -> str:
     return "".join(character for character in normalized if not unicodedata.combining(character))
 
 
+def _normalize_framework_structure(value: str, genre: str, language: str,
+                                   user_context: str = "") -> str:
+    """Replace premature cast and world-rule answers with neutral open requirements."""
+    text = str(value)
+    if not is_fiction(genre):
+        return text
+    role_section = re.search(
+        r"(?ims)^#{1,4}(?=[^\n]*(?:(?:personaj|character)|"
+        r"(?:requisitos?|requirements?)[^\n]{0,30}(?:roles?|rol)|"
+        r"(?:roles?|role)[^\n]{0,30}(?:requisitos?|requirements?)))"
+        r"(?=[^\n]*(?:roles?|role|rol|requisitos?|requirements?))[^\n]*\n"
+        r"(.*?)(?=^#{1,4}\s|\Z)",
+        text,
+    )
+    if normalize_language(language) == "es":
+        role_replacement = (
+            "## Requisitos abiertos de personajes\n\n"
+            "- ¿Qué funciones y relaciones exige el contrato canónico sin añadir hechos todavía?\n\n"
+        )
+        world_replacement = (
+            "## Límites abiertos del dominio\n\n"
+            "- ¿Qué reglas, límites, costes y condiciones debe establecer la biblia sin presuponer respuestas?\n\n"
+        )
+    else:
+        role_replacement = (
+            "## Open character requirements\n\n"
+            "- Which functions and relationships does the canonical contract require without adding facts yet?\n\n"
+        )
+        world_replacement = (
+            "## Open domain boundaries\n\n"
+            "- Which rules, limits, costs, and conditions must the bible establish without presupposing answers?\n\n"
+        )
+    if role_section:
+        text = text[:role_section.start()] + role_replacement + text[role_section.end():]
+    world_section = re.search(
+        r"(?ims)^#{1,4}(?=[^\n]*(?:reglas?\s+del\s+mundo|reglas?\s+de\s+mundo|"
+        r"reglas?\s+mundiales|world[- ]?rules?|world\s+rule\s+boundaries))[^\n]*\n"
+        r"(.*?)(?=^#{1,4}\s|\Z)",
+        text,
+    )
+    if world_section:
+        text = text[:world_section.start()] + world_replacement + text[world_section.end():]
+    return text
+
+
 class FrameworkQualityAuditChain(BaseStructureChain):
     PROMPT_TEMPLATE = """
 Act as an adversarial scope and canon auditor for a compact pre-bible book framework. Compare
@@ -207,6 +252,9 @@ Book framework:
             )
             guidance_for_audit = guidance_manager.context()
             user_context = "\n".join((str(subject), str(profile), guidance_for_audit))
+            result = _normalize_framework_structure(
+                result, genre, language, user_context=user_context,
+            )
             deterministic = _framework_issues(
                 result,
                 genre,
@@ -286,7 +334,7 @@ def _framework_issues(
     story_architecture_text = re.sub(
         r"(?i)\b(?:sin|without)\s+(?:revelar|se[nñ]alar|detallar|fijar|definir|anticipar|"
         r"reveal(?:ing)?|stat(?:e|ing)|specif(?:y|ying)|fix(?:ing)?|defin(?:e|ing)|detail(?:ing)?)\s+"
-        r"(?:el\s+|la\s+|the\s+)?"
+        r"(?:el\s+|la\s+|su\s+|the\s+|its\s+|their\s+)?"
         r"(?:desenlace|final|ending|resolution|resoluci[oó]n)\b",
         "",
         text,
@@ -324,44 +372,6 @@ def _framework_issues(
         text,
     ):
         issues.append("It canonizes named cast or encyclopedia material that belongs in the audited bible volumes.")
-    role_section = re.search(
-        r"(?ims)^#{1,4}(?=[^\n]*(?:personaj|character))"
-        r"(?=[^\n]*(?:roles?|role|requisitos?|requirements?))[^\n]*\n"
-        r"(.*?)(?=^#{1,4}\s|\Z)",
-        text,
-    )
-    named_role_rows = re.findall(
-        r"(?im)^\|\s*\*\*([^|*]+)\*\*[^|]*\|",
-        role_section.group(1) if role_section else "",
-    )
-    named_role_rows.extend(re.findall(
-        r"(?im)^\s*[-*]\s+\*\*([^*]+)\*\*",
-        role_section.group(1) if role_section else "",
-    ))
-    source = _canonical_lookup_text(user_context)
-    generic_role = re.compile(
-        r"(?i)^(?:(?:el|la|los|las|un|una)\s+)?(?:protagonistas?|antagonistas?|mentor(?:a|es|as)?|"
-        r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
-        r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardias?|guardi[aá]n(?:es)?|capit[aá]n(?:es)?|"
-        r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
-        r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|s[aá]bi[oa]s?|"
-        r"herman[oa]s?(?:\s+de\b.*)?|compa[nñ]er[oa]s?(?:\s+de\b.*)?|"
-        r"autoridades?|comit[eé]s?(?:\s+de\b.*)?|"
-        r"l[ií]der(?:es)?(?:\s+de\b.*)?|estrategas?|naves?(?:\s+estelares?)?|"
-        r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
-    )
-    invented_role_names = [
-        name.strip()
-        for name in named_role_rows
-        if _canonical_lookup_text(name.strip()) not in source and not generic_role.match(name.strip())
-    ]
-    if is_fiction(genre) and invented_role_names:
-        issues.append(
-            "Role requirements may preserve names supplied by the user, but must not invent a named cast; "
-            "the people/relationships bible volume owns new names and biographies: "
-            + ", ".join(dict.fromkeys(invented_role_names))
-            + "."
-        )
     if re.search(r"\bTODO\b", text) or re.search(
         r"(?i)\b(?:tbd|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
         r"sin\s+nombre\s+(?:definido|decidido|asignado)|to\s+be\s+(?:decided|defined|determined)|"
@@ -380,60 +390,11 @@ def _framework_issues(
         issues.append(
             "Do not defer canonical names until drafting; the audited people and encyclopedia volumes must establish them first."
         )
-    if is_fiction(genre):
-        invented_entities = []
-        entity_kind = (
-            r"nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
-            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity|"
-            r"expedici[oó]n|expedition|misi[oó]n|mission|flota|fleet|ley|law|c[oó]digo|code|"
-            r"protocolo|protocol|mecanismo|mechanism"
-        )
-        proper_name = (
-            r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*"
-            r"(?:\s+(?:(?:de|del|la|los|las|of|the)\s+)?"
-            r"[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*){0,3}"
-        )
-        entity_patterns = (
-            re.compile(
-                rf"\b(?i:{entity_kind})\s+(?:(?i:de)\s+(?:(?i:los|las|la|el)\s+)?)?"
-                rf"[*_]{{0,2}}[\"“”'‘’]?({proper_name})[\"“”'‘’]?"
-            ),
-            re.compile(
-                rf"\b(?i:{entity_kind})\b[^\n,]{{0,35}},?\s*(?:(?i:la|el|the)\s+)?"
-                rf"[*_]{{1,2}}({proper_name})[*_]{{1,2}}"
-            ),
-        )
-        for pattern in entity_patterns:
-            for match in pattern.finditer(text):
-                name = match.group(1).strip("*_ ")
-                if _canonical_lookup_text(name) not in source:
-                    invented_entities.append(name)
-        if invented_entities:
-            issues.append(
-                "Do not invent named world entities in the framework; defer these names to the audited bible: "
-                + ", ".join(dict.fromkeys(invented_entities))
-                + "."
-            )
-        unsupported_concrete_terms = []
-        for label, pattern in (
-            ("artifact or relic", r"(?i)\b(?:artefactos?|artifacts?|reliquias?|relics?)\b"),
-            ("portal", r"(?i)\b(?:portales?|portals?)\b"),
-        ):
-            if re.search(pattern, text) and not re.search(pattern, user_context):
-                unsupported_concrete_terms.append(label)
-        if unsupported_concrete_terms:
-            issues.append(
-                "The framework turns an unspecified premise into unsupported concrete story/world material: "
-                + ", ".join(unsupported_concrete_terms)
-                + ". Keep it as an open requirement for the audited bible."
-            )
     if is_fiction(genre) and len(re.findall(
         r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
         text,
     )) >= 2:
         issues.append("It locks clusters of arbitrary measurements before the world/domain bible is audited.")
-    if is_fiction(genre) and re.search(r"(?i)\b(?:subnanom[eé]tric[oa]|subnanometric)\b", text):
-        issues.append("It asserts unsupported precision before the world/domain bible can justify and audit it.")
     source_reference_text = re.sub(
         r"(?im)^.*\b(?:no\s+(?:se\s+)?inclu(?:ye|yen|ir)|sin|libre\s+de|evitar|"
         r"do\s+not\s+include|without|free\s+of|avoid)\b[^\n]*\b(?:bibliograf[ií]a|"
@@ -530,18 +491,50 @@ def get_foundation(subject, genre, style, profile, language="en", on_stage=None)
     title = TitleChain().run(subject, genre, style, profile, language)
     if on_stage:
         on_stage("title", title)
-    def framework_quality(cycle, report, candidate):
-        if on_stage:
-            on_stage("framework_quality", {
-                **report,
-                "cycle": cycle,
-                "candidate": candidate,
-            })
-
-    framework = FrameworkChain().run(
-        subject, genre, style, profile, title, language,
-        on_quality=framework_quality,
+    guidance = guidance_manager.context().strip()
+    if language == "es":
+        sections = [
+            ("Contrato de la premisa", subject),
+            ("Contrato de audiencia y entrega", profile),
+            ("Género declarado", genre),
+            ("Estilo declarado", style),
+        ]
+        if guidance:
+            sections.append(("Guía activa del usuario", guidance))
+        sections.append((
+            "Límite de autoridad canónica",
+            "Este contrato conserva exclusivamente la información proporcionada por el usuario. "
+            "El título generado no constituye evidencia canónica. Toda ampliación deberá crearse, "
+            "auditarse y persistirse en la biblia antes de utilizarse para planificar el manuscrito.",
+        ))
+    else:
+        sections = [
+            ("Premise contract", subject),
+            ("Audience and delivery contract", profile),
+            ("Declared genre", genre),
+            ("Declared style", style),
+        ]
+        if guidance:
+            sections.append(("Active user guidance", guidance))
+        sections.append((
+            "Canonical authority boundary",
+            "This contract preserves only information supplied by the user. The generated title "
+            "is not canonical evidence. Every expansion must be created, audited, and persisted "
+            "in the bible before it can be used to plan the manuscript.",
+        ))
+    framework = "\n\n".join(
+        f"## {heading}\n\n{clean_think_tags(str(content)).strip()}"
+        for heading, content in sections
+        if str(content).strip()
     )
+    if on_stage:
+        on_stage("framework_quality", {
+            "cycle": 0,
+            "passed": True,
+            "issues": [],
+            "deterministic": True,
+            "candidate": framework,
+        })
     if on_stage:
         on_stage("framework", framework)
     return title, framework

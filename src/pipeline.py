@@ -12,7 +12,7 @@ from book_bible import BookBibleChain, WikiDataChain
 from book_project import BookProjectWorkspace
 from generation_control import GenerationCancelled, generation_control
 from guidance import guidance_manager
-from editorial_policy import editorial_policy, is_documentary_history
+from editorial_policy import is_documentary_history
 from ideas import get_ideas
 from language import normalize_language
 from obsidian_vault import ObsidianVaultWriter, VaultProject
@@ -135,8 +135,6 @@ class BookGenerationPipeline:
                     project_path=str(workspace.root),
                 )
 
-            policy = editorial_policy(request.genre)
-            profile = f"{profile}\n\nEDITORIAL FACTUALITY POLICY: {policy}"
             if is_documentary_history(request.genre) and request.web_search:
                 self._progress("Researching initial historical source leads with DuckDuckGo...", 5)
                 query = " ".join(request.subject.split())[:300]
@@ -257,6 +255,7 @@ class BookGenerationPipeline:
             self._progress("Expanding and linking the canonical wiki...", 30, title=title)
             wiki_data = WikiDataChain().run(
                 bible, language, on_domain=wiki_checkpoint, on_quality=wiki_quality_checkpoint,
+                genre=request.genre,
             )
             workspace.write_checkpoint("wiki-complete.json", wiki_data)
             project.write_wiki(wiki_data)

@@ -13,6 +13,37 @@ ProgressiveContextManager = UnifiedContextManager
 
 _summary_config = get_config().summary
 
+
+def _fallback_continuity_summary(chapter_content: str, chapter_num: int,
+                                 chapter_title: str, language: str) -> str:
+    """Preserve grounded chapter evidence when summary generation is unavailable."""
+    cleaned = clean_think_tags(str(chapter_content)).strip()
+    limit = max(_summary_config.chapter_summary_max_chars, 600)
+    if len(cleaned) > limit:
+        head = max(180, limit // 3)
+        tail = max(300, limit - head - 12)
+        cleaned = f"{cleaned[:head]}\n[...]\n{cleaned[-tail:]}"
+    if normalize_language(language) == "es":
+        label = f"Capitulo {chapter_num} ({chapter_title}), contexto textual verificado"
+    else:
+        label = f"Chapter {chapter_num} ({chapter_title}), verified textual context"
+    return f"{label}:\n{cleaned}" if cleaned else label
+
+
+def _summary_is_usable(value: str) -> bool:
+    normalized = " ".join(str(value).casefold().split())
+    chatter = (
+        "how can i assist you",
+        "how can i help you",
+        "message might have been empty",
+        "message didn't come through",
+        "message did not come through",
+    )
+    return (
+        len(str(value).strip()) >= _summary_config.chapter_summary_min_chars
+        and not any(marker in normalized for marker in chatter)
+    )
+
 class ChapterSummaryChain(BaseEventChain):
     """Genera resúmenes de capítulos para mantener la coherencia narrativa entre ellos."""
     
@@ -139,8 +170,8 @@ class ChapterSummaryChain(BaseEventChain):
                 , language_instruction=language_instruction(language)
             )
             
-            if not result:
-                raise ValueError("No se generó contenido válido para el resumen")
+            if not _summary_is_usable(result):
+                raise ValueError("No se generó un resumen de continuidad válido")
             
             # Limitar longitud del resumen final para no sobrecargar el contexto
             if len(result) > _summary_config.chapter_summary_max_chars:
@@ -152,8 +183,6 @@ class ChapterSummaryChain(BaseEventChain):
             
         except Exception as e:
             print_progress(f"Error generando resumen para el capítulo {chapter_num}: {str(e)}")
-            return (
-                f"Capitulo {chapter_num}: El contenido continua; resumen pendiente."
-                if normalize_language(language) == "es"
-                else f"Chapter {chapter_num}: Content continues; summary pending."
+            return _fallback_continuity_summary(
+                chapter_content, chapter_num, chapter_title, language
             )

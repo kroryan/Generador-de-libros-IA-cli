@@ -4,6 +4,7 @@ Tests para el sistema de ordenamiento de capítulos.
 
 import sys
 import os
+import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from chapter_ordering import (
@@ -12,6 +13,7 @@ from chapter_ordering import (
     ChapterMetadata,
     sort_chapters_intelligently
 )
+from writing import _ordered_progressive_chapters
 
 
 def test_parse_prologue():
@@ -184,6 +186,19 @@ def test_validate_sequence_gaps():
     assert "salto" in warnings[0].lower(), "Warning debe mencionar salto"
     
     print("✅ test_validate_sequence_gaps: OK")
+
+
+def test_progressive_drafting_rejects_missing_previous_numbered_chapter():
+    with pytest.raises(ValueError, match="Salto en numeración"):
+        _ordered_progressive_chapters({
+            "Capítulo 1": ["Inicio"],
+            "Capítulo 30": ["Final prematuro"],
+        })
+
+
+def test_progressive_drafting_rejects_sequence_that_does_not_start_at_one():
+    with pytest.raises(ValueError, match="must start at 1"):
+        _ordered_progressive_chapters({"Chapter 30": ["Premature ending"]})
 
 
 def test_comparison_operators():

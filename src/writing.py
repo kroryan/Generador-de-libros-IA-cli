@@ -533,6 +533,54 @@ def create_savepoint_summary(llm, title, chapter_num, chapter_title, current_sum
         )
         return current_summary  # En caso de error, devolver el resumen anterior
 
+def _ordered_progressive_chapters(idea_dict):
+    """Return a strict chapter order; never silently draft across a numbered gap."""
+    from chapter_ordering import ChapterOrdering, ChapterType
+
+    ordering = ChapterOrdering(strict_mode=True)
+    metadata = [
+        ordering.parse_chapter(key, index)
+        for index, key in enumerate(idea_dict)
+    ]
+    numbers = sorted(
+        item.number for item in metadata
+        if item.type == ChapterType.NUMBERED and item.number is not None
+    )
+    if numbers and numbers[0] != 1:
+        raise ValueError(
+            f"Numbered chapter sequence must start at 1 before drafting; found {numbers[0]}"
+        )
+    return ordering.sort_chapters(idea_dict)
+
+
+def _completed_chapter_context(context_manager, next_chapter_number: int, language: str) -> str:
+    """Build bounded cumulative context with the immediately previous chapter kept intact."""
+    context = context_manager.get_context_for_next_chapter(next_chapter_number)
+    previous = str(context.get("previous_chapter", "")).strip()
+    global_summary = str(context.get("global_summary", "")).strip()
+    if not previous and not global_summary:
+        return ""
+
+    previous_label = "Capitulo anterior completado" if language == "es" else "Completed previous chapter"
+    global_label = "Continuidad acumulada" if language == "es" else "Cumulative continuity"
+    previous_block = f"### {previous_label}\n{previous}" if previous else ""
+    limit = max(_context_config.standard_context_size, 1200)
+    remaining = max(0, limit - len(previous_block) - 4)
+    global_block = (
+        f"### {global_label}\n{global_summary[:remaining]}"
+        if global_summary and remaining
+        else ""
+    )
+    return "\n\n".join(block for block in (global_block, previous_block) if block)
+
+
+def _merge_progressive_context(current_summary: str, completed_context: str) -> str:
+    current = str(current_summary).strip()
+    if not completed_context:
+        return current
+    return f"{completed_context}\n\n### Current chapter plan and state\n{current}".strip()
+
+
 def write_book(
     genre, style, profile, title, framework, summaries_dict, idea_dict,
     chapter_summaries=None, language="en", book_bible="", on_chapter_complete=None,
@@ -641,14 +689,13 @@ def write_book(
     try:
         total_chapters = len(idea_dict)
         
-        # Usar sistema inteligente de ordenamiento O(n log n)
-        from chapter_ordering import sort_chapters_intelligently
-        ordered_chapters = sort_chapters_intelligently(idea_dict)
+        ordered_chapters = _ordered_progressive_chapters(idea_dict)
         
         # Procesar capítulos en el orden establecido
         for i, chapter in enumerate(ordered_chapters, 1):
             generation_control.checkpoint()
             idea_list = idea_dict[chapter]
+            completed_context = _completed_chapter_context(context_manager, i, language)
             
             print_progress("======================================")
             print_progress(f"CAPÍTULO {i}/{total_chapters}: {chapter}")
@@ -752,7 +799,10 @@ def write_book(
                     'title': title,
                     'context_manager': context_manager,
                     'chapter_title': chapter,
-                    'summary': chapter_summary if j == 1 else savepoint_summary,  # Usar resumen incremental
+                    'summary': _merge_progressive_context(
+                        chapter_summary if j == 1 else savepoint_summary,
+                        completed_context,
+                    ),
                     # FASE 4: Usar configuración en lugar de valor mágico 800
                     'previous_paragraphs': paragraphs_context[-_context_config.limited_context_size:] if paragraphs_context else "",
                     'current_idea': idea,
@@ -885,6 +935,10 @@ def write_book(
                     extra={"operation": "chapter_summary", "chapter": chapter, "error": str(e)}
                 )
                 chapter_summaries[chapter] = savepoint_summary
+
+            context_manager.record_completed_chapter(
+                chapter, chapter, chapter_summaries[chapter]
+            )
 
             if on_chapter_complete:
                 on_chapter_complete(chapter, list(chapter_content), chapter_summaries[chapter])

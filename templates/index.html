@@ -290,14 +290,10 @@
 
         const samples = {
             en: {
-                subject: 'An epic adventure where rigorous magic and advanced technology coexist. Starships cross dangerous systems through engineered drives and ancient magical laws, while explorers uncover a discovery that can destabilize both traditions.',
-                profile: 'Adult speculative-fiction readers. Follow a capable but divided protagonist whose loyalty to scientific evidence conflicts with a magical inheritance. Use immersive prose, causal plotting, morally difficult choices, and a complete character arc.',
                 styles: ['Epic, imaginative, and character-driven', 'Detailed literary prose', 'Clear chronological historiography', 'Analytical and source-driven', 'Accessible popular nonfiction', 'Academic and evidence-led', 'Journalistic narrative nonfiction', 'Biographical and psychologically precise', 'Technical and instructional', 'Reflective essayistic', 'Direct, agile, and conversational', 'Poetic and reflective', 'Precise hard science fiction', 'Suspenseful and investigative'],
                 genres: ['Science fantasy', 'Science fiction', 'Epic fantasy', 'Cyberpunk', 'Dystopian fiction', 'Space opera', 'Magical realism', 'History', 'Historical fiction', 'Biography', 'Memoir', 'Narrative nonfiction', 'Popular science', 'Essay', 'True crime', 'Philosophy', 'Politics and society', 'Technical handbook', 'Self-improvement', 'Travel writing', 'Romance', 'Mystery', 'Horror']
             },
             es: {
-                subject: 'Una aventura epica donde conviven una magia rigurosa y una tecnologia avanzada. Naves estelares cruzan sistemas peligrosos mediante motores de ingenieria y antiguas leyes magicas, mientras una expedicion descubre algo capaz de desestabilizar ambas tradiciones.',
-                profile: 'Lectores adultos de ficcion especulativa. Sigue a un protagonista capaz pero dividido, cuya lealtad a las pruebas cientificas entra en conflicto con una herencia magica. Usa prosa inmersiva, una trama causal, decisiones morales dificiles y un arco de personaje completo.',
                 styles: ['Epico, imaginativo y centrado en personajes', 'Prosa literaria detallada', 'Historiografia cronologica y clara', 'Analitico y guiado por fuentes', 'Divulgacion accesible', 'Academico y basado en pruebas', 'No ficcion narrativa periodistica', 'Biografico y psicologicamente preciso', 'Tecnico e instructivo', 'Ensayistico y reflexivo', 'Directo, agil y conversacional', 'Poetico y reflexivo', 'Ciencia ficcion dura y precisa', 'Investigativo y con suspense'],
                 genres: ['Fantasia cientifica', 'Ciencia ficcion', 'Fantasia epica', 'Cyberpunk', 'Ficcion distopica', 'Opera espacial', 'Realismo magico', 'Historia', 'Ficcion historica', 'Biografia', 'Memorias', 'No ficcion narrativa', 'Divulgacion cientifica', 'Ensayo', 'Crimen real', 'Filosofia', 'Politica y sociedad', 'Manual tecnico', 'Desarrollo personal', 'Literatura de viajes', 'Romance', 'Misterio', 'Terror']
             }
@@ -421,8 +417,6 @@
             });
             subject.placeholder = copy[language].subjectPlaceholder;
             profile.placeholder = copy[language].profilePlaceholder;
-            if (!subject.dataset.edited || subject.value === samples[previous].subject) subject.value = samples[language].subject;
-            if (!profile.dataset.edited || profile.value === samples[previous].profile) profile.value = samples[language].profile;
             replaceOptions(byId('style'), samples[language].styles);
             replaceOptions(byId('genre'), samples[language].genres);
             const refresh = byId('refresh-models');

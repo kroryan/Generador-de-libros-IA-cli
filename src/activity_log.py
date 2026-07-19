@@ -57,12 +57,15 @@ class ActivityLog:
     def snapshot(self, after: int = 0, limit: int = 250) -> dict:
         safe_limit = max(1, min(int(limit), 1_000))
         with self._lock:
-            matching = [event.to_dict() for event in self._events if event.sequence > after]
+            cursor_reset = after > self._sequence
+            effective_after = 0 if cursor_reset else after
+            matching = [event.to_dict() for event in self._events if event.sequence > effective_after]
             events = matching[:safe_limit]
             return {
                 "events": events,
                 "last_sequence": events[-1]["sequence"] if events else self._sequence,
                 "has_more": len(matching) > safe_limit,
+                "cursor_reset": cursor_reset,
             }
 
 

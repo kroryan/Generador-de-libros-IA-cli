@@ -74,6 +74,11 @@ class ProviderManagerTests(unittest.TestCase):
         payload = journal.snapshot(after=first.sequence)
         self.assertEqual([event["message"] for event in payload["events"]], ["two", "three"])
         self.assertEqual(payload["last_sequence"], third.sequence)
+        self.assertFalse(payload["cursor_reset"])
+
+        restarted_cursor = journal.snapshot(after=100)
+        self.assertTrue(restarted_cursor["cursor_reset"])
+        self.assertEqual([event["message"] for event in restarted_cursor["events"]], ["two", "three"])
 
     def test_codex_json_events_are_published(self):
         activity_log.reset()

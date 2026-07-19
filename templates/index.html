@@ -738,6 +738,7 @@
             try {
                 const data = await requestJSON(`/activity?after=${lastActivitySequence}&limit=250`, {cache: 'no-store'});
                 activityEndpointAvailable = true;
+                if (data.cursor_reset) lastActivitySequence = 0;
                 for (const event of data.events || []) {
                     addLog(event.message, event.kind === 'error', event.kind || 'info', event.timestamp, event.source || 'system');
                     lastActivitySequence = Math.max(lastActivitySequence, Number(event.sequence) || 0);

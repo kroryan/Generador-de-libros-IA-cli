@@ -282,6 +282,7 @@ def test_guidance_ui_uses_only_canonical_server_activity_event():
     )[0]
     assert "await pollActivity();" in handler
     assert "guidanceSent}: ${message}" not in handler
+    assert "if (data.cursor_reset) lastActivitySequence = 0;" in html
 
 
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):

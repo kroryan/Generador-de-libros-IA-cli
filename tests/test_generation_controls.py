@@ -157,6 +157,40 @@ def test_framework_rejects_observed_reversed_role_heading_and_language_leaks():
     assert any("Inmersión" in issue for issue in issues)
 
 
+def test_framework_rejects_observed_character_requirements_bypass_and_placeholders():
+    bad = (
+        "## Requisitos de Personajes Iniciales\n"
+        "| Rol | Descripcion | Preguntas |\n|---|---|---|\n"
+        "| **Arion** (Protagonista) | Ingeniero orbital. | Nombre a decidir. |\n"
+        "| **Evelyn** | Capitana. | Motivacion a definir. |\n"
+        "| **Lucio** | Mago de runas. | Secreto por determinar. |\n"
+        "## Mundo\nLa nave *Prometeo* obedece a la Corporacion *AstraTech*.\n"
+        + "pregunta abierta " * 190
+    )
+    issues = _framework_issues(bad, "Fantasia cientifica", "es")
+    assert any("must not invent a named cast" in issue for issue in issues)
+    assert any("placeholder phrases" in issue for issue in issues)
+    assert any("named world entities" in issue for issue in issues)
+
+
+def test_framework_preserves_names_explicitly_supplied_by_user():
+    candidate = (
+        "## Requisitos de Personajes Iniciales\n"
+        "| Rol | Descripcion |\n|---|---|\n"
+        "| **Arion** | Protagonista. |\n| **Evelyn** | Capitana. |\n"
+        "## Limites del mundo\nLa nave *Prometeo* pertenece a la Corporacion *AstraTech*.\n"
+        + "pregunta abierta " * 190
+    )
+    issues = _framework_issues(
+        candidate,
+        "Fantasia cientifica",
+        "es",
+        user_context="Arion, Evelyn, la Prometeo y AstraTech ya existen.",
+    )
+    assert not any("named cast" in issue for issue in issues)
+    assert not any("named world entities" in issue for issue in issues)
+
+
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):
     monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
     candidate = (
@@ -199,6 +233,22 @@ def test_foundation_gate_rejects_repaired_scope_drift_policy_negation_and_langua
     assert any("negate" in issue for issue in issues)
     assert any("English labels" in issue for issue in issues)
     assert any("Inmersión" in issue for issue in issues)
+
+
+def test_foundation_gate_rejects_observed_synopsis_and_reversed_cast_table(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Premisa\nCiencia y magia compiten por controlar el viaje.\n"
+        "## Sinopsis\nLa Prometeo parte, descubre una reliquia y obliga a Arion a elegir un bando.\n"
+        "## Requisitos de Personajes Iniciales\n"
+        "| Rol | Descripcion | Preguntas |\n|---|---|---|\n"
+        "| **Arion** | Ingeniero orbital. | Que desea? |\n"
+        "| **Evelyn** | Capitana. | Que oculta? |\n"
+        "## Estructura narrativa\nPreparacion, revelacion y resolucion.\n"
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1, language="es")
+    assert any("editorial scope" in issue for issue in issues)
+    assert any("encyclopedia/story material" in issue for issue in issues)
 
 
 def test_people_volume_flags_ambiguous_shared_parent_claim(monkeypatch):

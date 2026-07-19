@@ -14,9 +14,10 @@ from utils import BaseStructureChain, clean_think_tags, print_progress
 BIBLE_VOLUMES = (
     (
         "Creative and editorial foundation",
-        "Premise or thesis; short and complete synopsis; reader promise; genre and audience; themes; "
-        "tone; structural rules; hard boundaries; central dramatic, historical, or explanatory question; "
-        "scope, evidence standard, and research obligations when nonfiction.",
+        "Premise or thesis; reader promise; genre and audience; themes; tone and style boundaries; "
+        "hard scope boundaries; central dramatic, historical, or explanatory question; scope, evidence "
+        "standard, and research obligations when nonfiction. For fiction, do not include a plot synopsis, "
+        "named cast, detailed world systems, or story architecture; later volumes own those facts.",
     ),
     (
         "People, actors, and relationships",
@@ -113,7 +114,9 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
             r"main characters?|personajes principales|technology ledger|ledger of technolog|"
             r"registro de tecnolog|ledger of laws?|registro de leyes|timeline|l[ií]nea de tiempo|"
             r"history of|historia de|verified facts?|hechos verificados|sources? of|fuentes de|"
-            r"narrative devices?|dispositivos narrativos)",
+            r"narrative devices?|dispositivos narrativos|plot synopsis|synopsis|sinopsis|"
+            r"narrative structure|estructura narrativa|character requirements?|requisitos? de personajes?|"
+            r"cast|reparto)",
             text,
         )
         if misplaced_headings:
@@ -125,13 +128,16 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
             r"(?im)^#{2,4}\s+.*(?:cronolog[ií]a|chronology|notas? de construcci[oó]n|"
             r"construction notes?|objetos? clave|key objects?|organizaciones?|organizations?|"
             r"relaciones? temporales?|temporal relations?|sistema estelar|stellar system|"
-            r"tecnolog[ií]a|technology)\b|"
+            r"tecnolog[ií]a|technology|sinopsis|synopsis|estructura narrativa|narrative structure|"
+            r"requisitos? de personajes?|character requirements?|reparto|cast)\b|"
             r"^\s*(?:[-*]\s+|\d+\.\s+)?\*\*(?:arquetipos?|archetypes?|objetos? clave|"
-            r"key objects?|organizaciones?|organizations?|relaciones? temporales?|temporal relations?)\*\*",
+            r"key objects?|organizaciones?|organizations?|relaciones? temporales?|temporal relations?|"
+            r"tecnolog[ií]a|technology|personajes?|characters?)\*\*",
             text,
         )
         cast_table = re.search(
-            r"(?im)^\|\s*(?:personaje|character)\s*\|\s*(?:rol|role)\s*\|",
+            r"(?im)^\|\s*(?:(?:personaje|character)\s*\|\s*(?:rol|role)|"
+            r"(?:rol|role)\s*\|\s*(?:descripci[oó]n|description))\s*\|",
             text,
         )
         if scope_blocks or cast_table:
@@ -305,6 +311,9 @@ Stay inside this volume's required coverage. Do not pull forward material assign
 volume merely to increase length. In the creative/editorial foundation, define role requirements
 without inventing a named cast beyond names explicitly supplied by the user or live guidance, and preserve world mechanisms, measurements, history, chronology, objects,
 organizations, and narrative architecture for their dedicated later volumes.
+For fictional volume 1 specifically, a synopsis is out of scope because it would duplicate and
+prematurely constrain the content/story architecture volume. Do not add plot events, a mission
+sequence, named cast tables, biographies, detailed systems, organizations, artifacts, or endings.
 {language_instruction}
 
 Binding genre policy:
@@ -374,6 +383,9 @@ add no operational value; material assigned to a different bible volume; prematu
 duplicate volume numbering; wrong language; truncation; or material repetition that displaces
 required coverage. Be strict but do not reject
 clearly declared fictional worldbuilding merely because it is invented.
+For fictional volume 1, reject every synopsis, plot event, named cast table, biography, detailed
+world mechanism, organization, artifact, chronology, or narrative architecture. These omissions
+are intentional: never request a synopsis or named story detail as missing foundation coverage.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}
@@ -419,6 +431,9 @@ citations, Obsidian links, a duplicate book title, or a volume-number heading. R
 replacement body with descriptive ## and ### Markdown headings.
 When an issue says material belongs to another volume, delete that entire out-of-scope block instead
 of merely removing its measurements or renaming its heading. Never retain text that negates policy.
+For fictional volume 1, do not add or preserve a synopsis, plot event, named cast table, biography,
+detailed world mechanism, organization, artifact, chronology, or narrative architecture, even if
+the candidate or a previous audit incorrectly asks for one.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}

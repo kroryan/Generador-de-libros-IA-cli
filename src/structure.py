@@ -47,8 +47,11 @@ scope boundaries, evidence classes, reader outcomes, and open research obligatio
 
 Do not plan acts, chapters, scenes, chapter ranges, climax beats, or the ending. Do not provide
 a bibliography, recommended sources, citations, quotations, or invented evidence. Do not lock
-minor names not explicitly supplied by the user or live guidance, measurements, dates, or lore that belong in the audited bible. Use descriptive
-Markdown headings and preserve genuine unknowns as questions.
+minor character, place, organization, vehicle, artifact, or system names not explicitly supplied
+by the user or live guidance. Do not use placeholder phrases such as TBD, "name to be decided",
+"a definir", or "a decidir". Preserve genuine unknowns as complete questions without provisional
+answers or names. Measurements, dates, and lore belong in the audited bible. Use descriptive
+Markdown headings.
 {language_instruction}
 
 Subject: {subject}
@@ -80,14 +83,24 @@ Book framework:
                 title=clean_think_tags(title), language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre), quality_feedback=feedback,
             )
-            issues = _framework_issues(result, genre, language)
+            issues = _framework_issues(
+                result,
+                genre,
+                language,
+                user_context="\n".join((str(subject), str(profile))),
+            )
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
         raise ValueError("The foundational framework still fixed downstream canon or contained unsupported material after repair")
 
 
-def _framework_issues(value: str, genre: str, language: str = "") -> list[str]:
+def _framework_issues(
+    value: str,
+    genre: str,
+    language: str = "",
+    user_context: str = "",
+) -> list[str]:
     text = str(value)
     issues = []
     if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < 180 or "##" not in text:
@@ -113,20 +126,52 @@ def _framework_issues(value: str, genre: str, language: str = "") -> list[str]:
     ):
         issues.append("It canonizes named cast or encyclopedia material that belongs in the audited bible volumes.")
     role_section = re.search(
-        r"(?ims)^#{1,4}(?=[^\n]*(?:roles?|role))(?=[^\n]*(?:personaj|character))[^\n]*\n"
+        r"(?ims)^#{1,4}(?=[^\n]*(?:personaj|character))"
+        r"(?=[^\n]*(?:roles?|role|requisitos?|requirements?))[^\n]*\n"
         r"(.*?)(?=^#{1,4}\s|\Z)",
         text,
     )
     named_role_rows = re.findall(
-        r"(?im)^\|\s*\*\*[^|*]+\*\*[^|]*\|\s*(?:protagonist|protagonista|captain|capit[aá]n|"
-        r"alchemist|alquimista|engineer|ingenier[oa]|antagonist|antagonista|enemy|enemig[oa]|leader|l[ií]der)",
+        r"(?im)^\|\s*\*\*([^|*]+)\*\*[^|]*\|",
         role_section.group(1) if role_section else "",
     )
-    if is_fiction(genre) and len(named_role_rows) > 1:
+    source = str(user_context).casefold()
+    invented_role_names = [
+        name.strip() for name in named_role_rows if name.strip().casefold() not in source
+    ]
+    if is_fiction(genre) and invented_role_names:
         issues.append(
-            "Role requirements may preserve a user-supplied protagonist name, but must not invent a named cast; "
-            "the people/relationships bible volume owns secondary names and biographies."
+            "Role requirements may preserve names supplied by the user, but must not invent a named cast; "
+            "the people/relationships bible volume owns new names and biographies: "
+            + ", ".join(dict.fromkeys(invented_role_names))
+            + "."
         )
+    if re.search(
+        r"(?i)\b(?:tbd|todo|a\s+(?:decidir|definir|determinar)|por\s+(?:definir|determinar)|"
+        r"to\s+be\s+(?:decided|defined|determined)|name\s+pending)\b",
+        text,
+    ):
+        issues.append(
+            "Replace unresolved placeholder phrases with complete open questions; do not assign provisional names or facts."
+        )
+    if is_fiction(genre):
+        invented_entities = []
+        entity_pattern = re.compile(
+            r"(?i)\b(?:nave|ship|corporaci[oó]n|corporation|compa[nñ][ií]a|company|orden|order|"
+            r"ciudad|city|reliquia|relic|artefacto|artifact|entidad|entity)\s+"
+            r"(?:antigua\s+|ancient\s+|llamad[oa]\s+|called\s+|el\s+|la\s+|the\s+)?"
+            r"[*_]{0,2}([A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]*){0,3})",
+        )
+        for match in entity_pattern.finditer(text):
+            name = match.group(1).strip("*_ ")
+            if name.casefold() not in source:
+                invented_entities.append(name)
+        if invented_entities:
+            issues.append(
+                "Do not invent named world entities in the framework; defer these names to the audited bible: "
+                + ", ".join(dict.fromkeys(invented_entities))
+                + "."
+            )
     if is_fiction(genre) and len(re.findall(
         r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
         text,

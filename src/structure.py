@@ -158,7 +158,9 @@ def _framework_issues(
     if re.search(r"(?im)^#{1,4}\s+(?:ending|final|resolution|resoluci[oó]n|desenlace)\b", text):
         issues.append("It prematurely fixes the ending; leave story outcomes for the audited architecture volume.")
     story_architecture_text = re.sub(
-        r"(?i)\b(?:sin|without)\s+(?:revelar|reveal(?:ing)?)\s+(?:el\s+|the\s+)?"
+        r"(?i)\b(?:sin|without)\s+(?:revelar|se[nñ]alar|detallar|fijar|definir|anticipar|"
+        r"reveal(?:ing)?|stat(?:e|ing)|specif(?:y|ying)|fix(?:ing)?|defin(?:e|ing)|detail(?:ing)?)\s+"
+        r"(?:el\s+|la\s+|the\s+)?"
         r"(?:desenlace|final|ending|resolution|resoluci[oó]n)\b",
         "",
         text,
@@ -207,7 +209,8 @@ def _framework_issues(
         r"(?i)^(?:(?:el|la|los|las|un|una)\s+)?(?:protagonistas?|antagonistas?|mentor(?:a|es|as)?|"
         r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
         r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardi(?:a|á)n(?:es)?|capit[aá]n(?:es)?|"
-        r"ingenier[oa]s?|aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
+        r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
+        r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [
         name.strip()

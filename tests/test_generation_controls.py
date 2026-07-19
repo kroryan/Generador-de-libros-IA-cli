@@ -328,12 +328,24 @@ def test_framework_does_not_treat_normal_spanish_todo_as_placeholder():
 
 def test_framework_allows_negative_ending_reference_and_complete_arc_promise():
     candidate = (
-        "## Promesa\nLa experiencia culmina en un arco completo, sin revelar el desenlace.\n"
+        "## Promesa\nLa experiencia culmina en un arco completo, sin señalar la resolución.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
     assert not any("story architecture" in issue for issue in issues)
     assert not any("culminates" in issue for issue in issues)
+
+
+def test_framework_allows_observed_generic_role_labels():
+    candidate = (
+        "## Requisitos iniciales de personajes y roles\n"
+        "- **Coordinador científico**: articula las decisiones del equipo.\n"
+        "- **Maestra de arcanos**: representa el conocimiento sobrenatural.\n"
+        "- **Explorador de campo**: contrasta ambos métodos.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert not any("named cast" in issue for issue in issues)
 
 
 def test_guidance_ui_uses_only_canonical_server_activity_event():
@@ -355,6 +367,13 @@ def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypat
     issues = _static_bible_issues(candidate, "Fantasia cientifica")
     assert any("volume number" in issue for issue in issues)
     assert any("scholarship" in issue for issue in issues)
+
+
+def test_static_bible_gate_rejects_body_level_h1_even_with_nested_sections(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = "# Premisa\nTexto editorial suficiente.\n## Temas\n" + "detalle " * 20
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1, language="es")
+    assert any("level-one heading" in issue for issue in issues)
 
 
 def test_foundation_gate_rejects_observed_scope_drift_and_fake_precision(monkeypatch):
@@ -470,7 +489,49 @@ def test_bible_quality_gate_repairs_before_accepting(monkeypatch):
         )
     assert accepted == repaired
     assert repair.call_count == 2
+    final_repair_instructions = repair.call_args.args[-2]
+    assert "Elias is both dead and active" in final_repair_instructions
+    assert "volume number" in final_repair_instructions
     assert [report["passed"] for report in reports] == [False, False, True]
+
+
+def test_bible_quality_gate_adapts_when_repair_exposes_a_new_issue(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    monkeypatch.setenv("BIBLE_QUALITY_MAX_REPAIRS", "1")
+    monkeypatch.setenv("BIBLE_ADAPTIVE_REPAIRS", "1")
+    first = "# Premisa\n## Temas\n" + "detalle " * 20
+    second = (
+        "## Promesa\nEl protagonista tiene un arco completo: de la duda al reconocimiento de su linaje.\n"
+        + "detalle " * 20
+    )
+    third = "## Premisa\nLa tensión central permanece abierta para la arquitectura.\n" + "detalle " * 20
+    reports = []
+    with patch("book_bible.BibleQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}), patch(
+        "book_bible.BibleVolumeRepairChain.run", side_effect=[second, third]
+    ) as repair:
+        accepted = BookBibleChain._quality_gate(
+            first, BIBLE_VOLUMES[0][0], 1, BIBLE_VOLUMES[0][1], "Premise",
+            "Fantasia cientifica", "Framework", "No prior canon", "es",
+            lambda *args: reports.append(args[4]),
+        )
+    assert accepted == third
+    assert repair.call_count == 2
+    assert reports[-1]["adaptive_repairs"] == 1
+    assert [report["passed"] for report in reports] == [False, False, True]
+
+
+def test_bible_quality_gate_does_not_extend_an_unchanged_failure(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    monkeypatch.setenv("BIBLE_QUALITY_MAX_REPAIRS", "1")
+    monkeypatch.setenv("BIBLE_ADAPTIVE_REPAIRS", "2")
+    bad = "# Premisa\n## Temas\n" + "detalle " * 20
+    with patch("book_bible.BibleVolumeRepairChain.run", return_value=bad) as repair:
+        with pytest.raises(ValueError, match="level-one heading"):
+            BookBibleChain._quality_gate(
+                bad, BIBLE_VOLUMES[0][0], 1, BIBLE_VOLUMES[0][1], "Premise",
+                "Fantasia cientifica", "Framework", "No prior canon", "es", None,
+            )
+    assert repair.call_count == 1
 
 
 def test_bible_auditor_accepts_strict_json_and_normalizes_verdict():

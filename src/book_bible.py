@@ -88,8 +88,14 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
     text = str(candidate).strip()
     issues = []
     minimum = int(os.getenv("BIBLE_VOLUME_MIN_WORDS", "500"))
-    if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < minimum or "##" not in text:
-        issues.append(f"The replacement must contain at least {minimum} useful words and ## sections.")
+    if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < minimum:
+        issues.append(f"The replacement must contain at least {minimum} useful words.")
+    if not re.search(r"(?m)^#{2,3}\s+", text):
+        issues.append("Structure the replacement with descriptive ## and ### sections.")
+    if re.search(r"(?m)^#\s+", text):
+        issues.append(
+            "Replace every level-one heading with ## or ###; the application owns the book and volume headings."
+        )
     if re.search(r"(?im)^#{1,3}\s+.*\b(?:volume|volumen)\s+\d+\b", text):
         issues.append("Remove the body-level volume number; the application supplies the canonical volume heading.")
     if is_fiction(genre) and re.search(
@@ -311,6 +317,7 @@ operational reference for another author agent, not a pitch or a brief summary.
 Volume: {volume_name}
 This is volume {volume_index} of {volume_total}. Do not print a volume number or a duplicate
 book title inside the body; the application owns those headings.
+Never use a level-one `#` heading. Begin every body section with `##` or `###`.
 Required coverage: {requirements}
 Target at least {target_words} useful words when the premise supports them. Prefer explicit
 facts, tables, ledgers, constraints, examples, causal explanations, and named details.
@@ -446,6 +453,7 @@ Preserve valid detail and established canon, remove unsupported claims rather th
 and reconcile contradictions explicitly. Do not add chapter or act numbering, bibliography,
 citations, Obsidian links, a duplicate book title, or a volume-number heading. Return only the full
 replacement body with descriptive ## and ### Markdown headings.
+Never use a level-one `#` heading; the application owns all level-one headings.
 When an issue says material belongs to another volume, delete that entire out-of-scope block instead
 of merely removing its measurements or renaming its heading. Never retain text that negates policy.
 For fictional volume 1, do not add or preserve a synopsis, plot event, named cast table, biography,
@@ -512,7 +520,12 @@ class BookBibleChain:
     def _quality_gate(candidate, name, index, requirements, subject, genre, framework,
                       prior, language, on_quality) -> str:
         max_repairs = max(1, int(os.getenv("BIBLE_QUALITY_MAX_REPAIRS", "2")))
-        for cycle in range(max_repairs + 1):
+        max_adaptive_repairs = max(0, int(os.getenv("BIBLE_ADAPTIVE_REPAIRS", "2")))
+        adaptive_repairs = 0
+        encountered_issues: list[str] = []
+        previous_issues = None
+        cycle = 0
+        while cycle <= max_repairs + adaptive_repairs:
             deterministic = _static_bible_issues(candidate, genre, index, language)
             if deterministic:
                 audit = {
@@ -531,19 +544,32 @@ class BookBibleChain:
             report = {
                 "volume": name, "volume_index": index, "cycle": cycle,
                 "passed": passed, "deterministic_issues": deterministic, "audit": audit,
+                "adaptive_repairs": adaptive_repairs,
             }
             if on_quality:
                 on_quality(index, len(BIBLE_VOLUMES), name, cycle, report, candidate)
             if passed:
                 return candidate
-            if cycle >= max_repairs:
+            issue_signature = tuple(issues or ["Semantic audit returned repair without a specific issue."])
+            encountered_issues = list(dict.fromkeys([*encountered_issues, *issue_signature]))
+            at_current_limit = cycle >= max_repairs + adaptive_repairs
+            issues_changed = previous_issues is not None and issue_signature != previous_issues
+            if at_current_limit and issues_changed and adaptive_repairs < max_adaptive_repairs:
+                adaptive_repairs += 1
+                at_current_limit = False
+            if at_current_limit:
                 rendered = "; ".join(issues) or "audit did not pass"
                 raise ValueError(f"Bible volume '{name}' failed semantic repair: {rendered}")
-            repair_instructions = "\n".join(f"- {issue}" for issue in issues)
+            repair_instructions = (
+                "Fix the current blockers and do not reintroduce any issue found in an earlier cycle:\n"
+                + "\n".join(f"- {issue}" for issue in encountered_issues)
+            )
             candidate = BibleVolumeRepairChain().run(
                 name, index, len(BIBLE_VOLUMES), requirements, subject, genre,
                 framework, prior, candidate, repair_instructions, language,
             )
+            previous_issues = issue_signature
+            cycle += 1
         raise AssertionError("unreachable bible quality gate")
 
 

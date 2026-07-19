@@ -141,11 +141,14 @@ class ObsidianPipelineTests(unittest.TestCase):
     def test_bible_volumes_are_visible_and_incremental(self):
         project = ObsidianVaultWriter().create(
             output_directory=self.root, title="Incremental Canon", language="es",
-            metadata={}, framework="Marco", book_bible="",
+            metadata={}, framework="## Premisa\nMarco generado.", book_bible="", progressive=True,
         )
         initial = project.read_manifest()
         self.assertEqual(initial["book_bible_volumes"], [])
-        self.assertTrue((project.root / f"{initial['book_bible']}.md").is_file())
+        self.assertFalse((project.root / f"{initial['book_bible']}.md").exists())
+        self.assertFalse((project.root / f"{initial['wiki_index']}.md").exists())
+        self.assertFalse((project.root / f"{initial['outline']}.md").exists())
+        self.assertTrue((project.root / f"{initial['framework_note']}.md").is_file())
 
         project.write_bible_volumes([
             ("Creative and editorial foundation", "## Premisa\nCanon inicial."),
@@ -167,6 +170,18 @@ class ObsidianPipelineTests(unittest.TestCase):
         final = project.read_manifest()
         self.assertEqual(len(final["book_bible_volumes"]), 2)
         self.assertIn("Canon editado por el usuario", project.read_bible())
+        project.write_wiki({
+            "characters": [{
+                "name": "Alfredo", "aliases": [], "subtype": "protagonista",
+                "summary": "Astromago dividido entre dos tradiciones.",
+                "details": "## Funcion\nSostiene el conflicto central.", "relationships": [],
+            }],
+        })
+        wiki_manifest = project.read_manifest()
+        self.assertTrue((project.root / f"{wiki_manifest['wiki_index']}.md").is_file())
+        self.assertTrue((project.root / "04 - Personajes/Index - Personajes.md").is_file())
+        self.assertFalse((project.root / "05 - Mundo/Index - Lugares.md").exists())
+        self.assertFalse((project.root / "06 - Organizaciones/Index - Organizaciones.md").exists())
         self.assertEqual(project.validate_links(), [])
 
     def test_graph_is_repaired_and_valid(self):

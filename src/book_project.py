@@ -194,12 +194,18 @@ class BookProjectWorkspace:
         if vault_manifest_path.exists():
             try:
                 vault = json.loads(vault_manifest_path.read_text(encoding="utf-8"))
-                lines.extend([
-                    "", "## Canonical Vault", "",
-                    f"- [[{vault['book_bible']}|Book Bible]]",
-                    f"- [[{vault['outline']}|Chapter Index]]",
-                    f"- [[{vault['wiki_index']}|Wiki Index]]",
-                ])
+                available = []
+                for key, label in (
+                    ("framework_note", "Foundational Framework"),
+                    ("book_bible", "Book Bible"),
+                    ("outline", "Chapter Index"),
+                    ("wiki_index", "Wiki Index"),
+                ):
+                    target = str(vault.get(key, ""))
+                    if target and (self.root / f"{target}.md").is_file():
+                        available.append(f"- [[{target}|{label}]]")
+                if available:
+                    lines.extend(["", "## Canonical Vault", "", *available])
             except (KeyError, TypeError, json.JSONDecodeError):
                 pass
         (self.root / "Project Dashboard.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")

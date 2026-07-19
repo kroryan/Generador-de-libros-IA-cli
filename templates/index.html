@@ -157,7 +157,15 @@
                     <div id="progress-bar" class="progress-fill"></div>
                     <div id="progress-text" class="progress-text">0%</div>
                 </div>
-                <div id="pipeline-log" class="terminal" role="log" aria-live="polite"></div>
+                <div class="activity-table">
+                    <div class="activity-header" aria-hidden="true">
+                        <span data-i18n="activityTime">TIME</span>
+                        <span data-i18n="activitySource">SOURCE</span>
+                        <span data-i18n="activityEvent">EVENT</span>
+                        <span data-i18n="activityMessage">MESSAGE</span>
+                    </div>
+                    <div id="pipeline-log" class="activity-log" role="log" aria-live="polite"></div>
+                </div>
                 <form id="guidance-form" class="guidance-form">
                     <label class="guidance-option" for="web-search">
                         <input type="checkbox" id="web-search">
@@ -228,6 +236,7 @@
                 agentTools: 'AUTHOR AGENT VAULT TOOLS', format: 'PUBLISHED FORMAT',
                 directory: 'OUTPUT DIRECTORY', generate: 'GENERATE BOOK', generating: 'GENERATING...',
                 pause: 'PAUSE', resume: 'RESUME', cancel: 'CANCEL', pauseError: 'Could not pause generation',
+                activityTime: 'TIME', activitySource: 'SOURCE', activityEvent: 'EVENT', activityMessage: 'MESSAGE',
                 cancelError: 'Could not cancel generation',
                 sendGuidance: 'SEND', guidancePlaceholder: 'Add a live instruction or correction for the author agent...',
                 guidanceSent: 'Guidance queued for the author agent', guidanceError: 'Could not send guidance',
@@ -258,6 +267,7 @@
                 agentTools: 'HERRAMIENTAS DEL AGENTE AUTOR', format: 'FORMATO PUBLICADO',
                 directory: 'DIRECTORIO DE SALIDA', generate: 'GENERAR LIBRO', generating: 'GENERANDO...',
                 pause: 'PAUSAR', resume: 'REANUDAR', cancel: 'CANCELAR', pauseError: 'No se pudo pausar la generacion',
+                activityTime: 'HORA', activitySource: 'ORIGEN', activityEvent: 'EVENTO', activityMessage: 'MENSAJE',
                 cancelError: 'No se pudo cancelar la generacion',
                 sendGuidance: 'ENVIAR', guidancePlaceholder: 'Anade una orden, correccion o apunte para el agente autor...',
                 guidanceSent: 'Instruccion enviada al agente autor', guidanceError: 'No se pudo enviar la instruccion',
@@ -321,13 +331,47 @@
         let lastVisibleActivity = Date.now();
         let generationStartedAt = null;
 
-        function addLog(message, isError = false, kind = 'info', timestamp = '') {
-            const line = document.createElement('div');
-            line.className = `log-line log-${kind}${isError ? ' log-error' : ''}`;
-            const prefix = timestamp ? `[${new Date(timestamp).toLocaleTimeString()}] ` : '';
-            line.textContent = `${prefix}${message}`;
-            logElement.appendChild(line);
-            logElement.scrollTop = logElement.scrollHeight;
+        function addLog(message, isError = false, kind = 'info', timestamp = '', source = 'ui') {
+            const shouldFollow = logElement.scrollHeight - logElement.scrollTop - logElement.clientHeight < 48;
+            const row = document.createElement('article');
+            row.className = `activity-row log-${kind}${isError ? ' log-error' : ''}`;
+
+            const time = document.createElement('time');
+            time.className = 'activity-time';
+            const date = timestamp ? new Date(timestamp) : new Date();
+            time.dateTime = date.toISOString();
+            time.textContent = date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+
+            const origin = document.createElement('span');
+            origin.className = 'activity-source';
+            origin.textContent = source || 'system';
+
+            const event = document.createElement('span');
+            event.className = 'activity-kind';
+            event.textContent = kind || 'info';
+
+            const content = document.createElement('div');
+            content.className = 'activity-message';
+            const value = String(message || '');
+            const longMessage = value.length > 420 || value.split('\n').length > 5;
+            if (longMessage) {
+                const details = document.createElement('details');
+                details.className = 'activity-details';
+                const summary = document.createElement('summary');
+                const firstLine = value.split('\n').find((line) => line.trim()) || value;
+                summary.textContent = firstLine.length > 180 ? `${firstLine.slice(0, 177)}...` : firstLine;
+                const body = document.createElement('pre');
+                body.textContent = value;
+                details.append(summary, body);
+                content.appendChild(details);
+            } else {
+                content.textContent = value;
+            }
+
+            row.append(time, origin, event, content);
+            logElement.appendChild(row);
+            while (logElement.children.length > 500) logElement.firstElementChild.remove();
+            if (shouldFollow) logElement.scrollTop = logElement.scrollHeight;
             lastVisibleActivity = Date.now();
         }
 
@@ -695,8 +739,7 @@
                 const data = await requestJSON(`/activity?after=${lastActivitySequence}&limit=250`, {cache: 'no-store'});
                 activityEndpointAvailable = true;
                 for (const event of data.events || []) {
-                    const source = event.source ? `[${event.source}] ` : '';
-                    addLog(`${source}${event.message}`, event.kind === 'error', event.kind || 'info', event.timestamp);
+                    addLog(event.message, event.kind === 'error', event.kind || 'info', event.timestamp, event.source || 'system');
                     lastActivitySequence = Math.max(lastActivitySequence, Number(event.sequence) || 0);
                 }
                 if (data.has_more) await pollActivity();

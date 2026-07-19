@@ -3,7 +3,7 @@
 import re
 
 from editorial_policy import editorial_policy, is_fiction
-from language import get_language, language_instruction, normalize_language
+from language import get_language, language_instruction, language_quality_issues, normalize_language
 from utils import (
     BaseStructureChain,
     clean_think_tags,
@@ -47,7 +47,7 @@ scope boundaries, evidence classes, reader outcomes, and open research obligatio
 
 Do not plan acts, chapters, scenes, chapter ranges, climax beats, or the ending. Do not provide
 a bibliography, recommended sources, citations, quotations, or invented evidence. Do not lock
-minor names, measurements, dates, or lore that belong in the audited bible. Use descriptive
+minor names not explicitly supplied by the user or live guidance, measurements, dates, or lore that belong in the audited bible. Use descriptive
 Markdown headings and preserve genuine unknowns as questions.
 {language_instruction}
 
@@ -80,14 +80,14 @@ Book framework:
                 title=clean_think_tags(title), language_instruction=language_instruction(language),
                 genre_policy=editorial_policy(genre), quality_feedback=feedback,
             )
-            issues = _framework_issues(result, genre)
+            issues = _framework_issues(result, genre, language)
             if not issues:
                 return result
             feedback = "Repair every issue and return the complete framework again:\n- " + "\n- ".join(issues)
         raise ValueError("The foundational framework still fixed downstream canon or contained unsupported material after repair")
 
 
-def _framework_issues(value: str, genre: str) -> list[str]:
+def _framework_issues(value: str, genre: str, language: str = "") -> list[str]:
     text = str(value)
     issues = []
     if len(re.findall(r"\b\w+\b", text, flags=re.UNICODE)) < 180 or "##" not in text:
@@ -113,16 +113,20 @@ def _framework_issues(value: str, genre: str) -> list[str]:
     ):
         issues.append("It canonizes named cast or encyclopedia material that belongs in the audited bible volumes.")
     role_section = re.search(
-        r"(?ims)^#{1,4}[^\n]*(?:role requirements?|requisitos[^\n]*roles?[^\n]*personajes?)[^\n]*\n"
+        r"(?ims)^#{1,4}(?=[^\n]*(?:roles?|role))(?=[^\n]*(?:personaj|character))[^\n]*\n"
         r"(.*?)(?=^#{1,4}\s|\Z)",
         text,
     )
-    if is_fiction(genre) and role_section and re.search(
-        r"(?i)\*\*[^*\n]+\*\*\s*\([^)]*(?:protagonist|protagonista|captain|capit[aá]n|"
-        r"alchemist|alquimista|robot|antagonist|antagonista)",
-        role_section.group(1),
-    ):
-        issues.append("Role requirements must use unnamed functions; the people/relationships bible volume owns cast names and biographies.")
+    named_role_rows = re.findall(
+        r"(?im)^\|\s*\*\*[^|*]+\*\*[^|]*\|\s*(?:protagonist|protagonista|captain|capit[aá]n|"
+        r"alchemist|alquimista|engineer|ingenier[oa]|antagonist|antagonista|enemy|enemig[oa]|leader|l[ií]der)",
+        role_section.group(1) if role_section else "",
+    )
+    if is_fiction(genre) and len(named_role_rows) > 1:
+        issues.append(
+            "Role requirements may preserve a user-supplied protagonist name, but must not invent a named cast; "
+            "the people/relationships bible volume owns secondary names and biographies."
+        )
     if is_fiction(genre) and len(re.findall(
         r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
         text,
@@ -133,6 +137,8 @@ def _framework_issues(value: str, genre: str) -> list[str]:
         r"fuentes acad[eé]micas|reference list)\b", text,
     ):
         issues.append("Fiction must not contain real-world source recommendations or claims of academic support.")
+    if language:
+        issues.extend(language_quality_issues(text, language))
     return issues
 
 

@@ -152,6 +152,8 @@ class VaultProject:
 
     def write_bible_volumes(self, volumes: list[tuple[str, str]]) -> None:
         """Publish accepted bible volumes immediately into the visible Obsidian vault."""
+        if not volumes:
+            return
         manifest = self.read_manifest()
         language = manifest.get("language", "en")
         names = VOLUME_NAMES.get(language, VOLUME_NAMES["en"])
@@ -418,8 +420,10 @@ class VaultProject:
             index_path = f"{folder}/Index - {label}"
             if index_path in index_targets:
                 continue
+            category_entities = [item for item in entities if item["category"] == category]
+            if not category_entities:
+                continue
             index_targets.append(index_path)
-            category_entities = [item for item in entities if item["path"].startswith(folder + "/")]
             lines = [f"# {label}", "", f"[[{manifest['wiki_index']}|{terms['wiki']}]]", ""]
             lines.extend(f"- [[{item['path']}|{item['name']}]] - {item['summary']}" for item in category_entities)
             (self.root / f"{index_path}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
@@ -457,8 +461,10 @@ class VaultProject:
             }
             label = labels[category]
             index_path = f"{folder}/Index - {label}"
-            index_targets.append(index_path)
             items = [item for item in manifest.get("entities", []) if item.get("category") == category]
+            if not items:
+                continue
+            index_targets.append(index_path)
             lines = [f"# {label}", "", f"[[{manifest['wiki_index']}|{terms['wiki']}]]", ""]
             lines.extend(f"- [[{item['path']}|{item['name']}]] - {item.get('summary', '')}" for item in items)
             (self.root / f"{index_path}.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
@@ -558,32 +564,56 @@ class VaultProject:
         terms = _terms(manifest.get("language", "en"))
         portal = self.root / f"{paths['portal']}.md"
         master = self.root / f"{paths['master_index']}.md"
-        portal.write_text(
-            f"# {manifest['title']}\n\n"
-            f"- [[{manifest['book_bible']}|{terms['book_bible']}]]\n- [[{manifest['wiki_index']}|{terms['wiki']}]]\n"
-            f"- [[{paths.get('books_index', manifest['outline'])}|{terms['books']}]]\n- [[{manifest['outline']}|{terms['active_chapters']}]]\n"
-            f"- [[{paths['status']}|{terms['project_status']}]]\n"
-            f"- [[{paths['questions']}|{terms['questions']}]]\n- [[{paths['continuity_index']}|{terms['continuity']}]]\n",
-            encoding="utf-8",
-        )
-        if manifest.get("source_books"):
-            with portal.open("a", encoding="utf-8") as handle:
-                handle.write(f"- [[{manifest['source_books'][0]['portal']}|{terms['previous_book']}]]\n")
-        master.write_text(
-            f"# {master.stem}\n\n[[{paths['portal']}|Portal]]\n\n"
-            f"- [[{manifest['book_bible']}|{terms['canonical_bible']}]]\n- [[{manifest['wiki_index']}|{terms['world_wiki']}]]\n"
-            f"- [[{manifest['outline']}|{terms['manuscript']}]]\n- [[{paths['style']}|{terms['writing_guide']}]]\n",
-            encoding="utf-8",
-        )
-        if manifest.get("source_books"):
-            with master.open("a", encoding="utf-8") as handle:
-                handle.write(f"- [[{manifest['source_books'][0]['portal']}|{terms['previous_book']}]]\n")
         books_index = paths.get("books_index")
         if books_index:
             book_lines = [f"# {Path(books_index).name}", ""]
             for book in manifest.get("books", []):
-                book_lines.append(f"- [[{book.get('outline', manifest['outline'])}|{book.get('title', 'Untitled')}]]")
-            (self.root / f"{books_index}.md").write_text("\n".join(book_lines).strip() + "\n", encoding="utf-8")
+                outline = book.get("outline", manifest["outline"])
+                if (self.root / f"{outline}.md").is_file():
+                    book_lines.append(f"- [[{outline}|{book.get('title', 'Untitled')}]]")
+            if len(book_lines) > 2:
+                (self.root / f"{books_index}.md").write_text("\n".join(book_lines).strip() + "\n", encoding="utf-8")
+
+        def available(target: str, label: str) -> str | None:
+            return f"- [[{target}|{label}]]" if (self.root / f"{target}.md").is_file() else None
+
+        portal_links = [
+            available(manifest.get("framework_note", ""), "Marco fundacional" if manifest["language"] == "es" else "Foundational Framework")
+            if manifest.get("framework_note") else None,
+            available(manifest["book_bible"], terms["book_bible"]),
+            available(manifest["wiki_index"], terms["wiki"]),
+            available(books_index, terms["books"]) if books_index else None,
+            available(manifest["outline"], terms["active_chapters"]),
+            available(paths["status"], terms["project_status"]),
+            available(paths["questions"], terms["questions"]),
+            available(paths["continuity_index"], terms["continuity"]),
+        ]
+        portal_links.extend(
+            available(item["portal"], f"{terms['previous_book']}: {item['title']}")
+            for item in manifest.get("source_books", [])
+        )
+        portal.write_text(
+            f"# {manifest['title']}\n\n" + "\n".join(link for link in portal_links if link) + "\n",
+            encoding="utf-8",
+        )
+
+        master_links = [
+            available(manifest.get("framework_note", ""), "Marco fundacional" if manifest["language"] == "es" else "Foundational Framework")
+            if manifest.get("framework_note") else None,
+            available(manifest["book_bible"], terms["canonical_bible"]),
+            available(manifest["wiki_index"], terms["world_wiki"]),
+            available(manifest["outline"], terms["manuscript"]),
+            available(paths["style"], terms["writing_guide"]),
+        ]
+        master_links.extend(
+            available(item["portal"], f"{terms['previous_book']}: {item['title']}")
+            for item in manifest.get("source_books", [])
+        )
+        master.write_text(
+            f"# {master.stem}\n\n[[{paths['portal']}|Portal]]\n\n"
+            + "\n".join(link for link in master_links if link) + "\n",
+            encoding="utf-8",
+        )
 
     def validate_links(self) -> list[str]:
         markdown_files = list(self.root.rglob("*.md"))
@@ -694,7 +724,7 @@ class ObsidianVaultWriter:
                framework: str, chapter_dict: dict[str, str] | None = None,
                summaries_dict: dict[str, str] | None = None, idea_dict: dict[str, list[str]] | None = None,
                book_bible: str = "", wiki_data: dict | None = None,
-               vault_root: str | Path | None = None) -> VaultProject:
+               vault_root: str | Path | None = None, progressive: bool = False) -> VaultProject:
         base = Path(output_directory).expanduser().resolve()
         root = Path(vault_root).expanduser().resolve() if vault_root else base / f"{slugify(title)}-vault"
         root.mkdir(parents=True, exist_ok=True)
@@ -745,18 +775,26 @@ class ObsidianVaultWriter:
             )
             volume_paths.append(path.as_posix())
         bible_path = f"{labels['core']}/{labels['bible']}"
-        (root / f"{bible_path}.md").write_text(
-            f"# {title} - {labels['bible']}\n\n" + "\n".join(
-                f"- [[{path.with_suffix('').as_posix()}|{path.stem}]]" for path in map(Path, volume_paths)
-            ) + "\n",
-            encoding="utf-8",
-        )
         wiki_index = f"{labels['start']}/{labels['wiki']}"
         outline = f"{active_book}/{labels['outline']}"
-        for target, heading in ((wiki_index, labels["wiki"]), (outline, labels["outline"]),
-                                (paths["status"], labels["status"]), (paths["questions"], labels["questions"]),
-                                (paths["continuity_index"], labels["continuity_index"]), (paths["style"], labels["style"])):
-            (root / f"{target}.md").write_text(f"# {heading}\n\n[[{bible_path}|{terms['bible']}]]\n", encoding="utf-8")
+        framework_note = f"{labels['core']}/{'Marco fundacional' if language == 'es' else 'Foundational Framework'}"
+        if progressive:
+            (root / f"{framework_note}.md").write_text(
+                "---\ntype: foundational-framework\nstatus: generated\n---\n\n"
+                f"# {'Marco fundacional' if language == 'es' else 'Foundational Framework'}\n\n{framework.strip()}\n",
+                encoding="utf-8",
+            )
+        else:
+            (root / f"{bible_path}.md").write_text(
+                f"# {title} - {labels['bible']}\n\n" + "\n".join(
+                    f"- [[{path.with_suffix('').as_posix()}|{path.stem}]]" for path in map(Path, volume_paths)
+                ) + "\n",
+                encoding="utf-8",
+            )
+            for target, heading in ((wiki_index, labels["wiki"]), (outline, labels["outline"]),
+                                    (paths["status"], labels["status"]), (paths["questions"], labels["questions"]),
+                                    (paths["continuity_index"], labels["continuity_index"]), (paths["style"], labels["style"])):
+                (root / f"{target}.md").write_text(f"# {heading}\n\n[[{bible_path}|{terms['bible']}]]\n", encoding="utf-8")
         if metadata.get("vault_mode") == "revise":
             revision_name = "Brief de revision" if language == "es" else "Revision Brief"
             revision_path = f"{labels['writing']}/{revision_name}"
@@ -777,11 +815,13 @@ class ObsidianVaultWriter:
             "schema_version": 2, "created_at": datetime.now(timezone.utc).isoformat(),
             "title": title, "language": language, "metadata": metadata, "framework": framework,
             "book_bible": bible_path, "book_bible_volumes": volume_paths,
+            "framework_note": framework_note if progressive else "", "progressive": progressive,
             "outline": outline, "wiki_index": wiki_index, "paths": paths, "entities": [], "chapters": [],
             "active_book_id": book_id,
             "books": [{"id": book_id, "title": title, "path": active_book, "outline": outline, "chapters": []}],
         })
-        project._refresh_portals()
+        if not progressive:
+            project._refresh_portals()
         if wiki_data:
             project.write_wiki(wiki_data)
         if chapter_dict:

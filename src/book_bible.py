@@ -7,7 +7,7 @@ import os
 import re
 
 from editorial_policy import editorial_policy, is_fiction
-from language import language_instruction, normalize_language
+from language import language_instruction, language_quality_issues, normalize_language
 from utils import BaseStructureChain, clean_think_tags, print_progress
 
 
@@ -82,7 +82,8 @@ def _audit_issue_text(item: object) -> str:
     return f"{problem} Required repair: {repair}" if repair else problem
 
 
-def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0) -> list[str]:
+def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0,
+                          language: str = "") -> list[str]:
     text = str(candidate).strip()
     issues = []
     minimum = int(os.getenv("BIBLE_VOLUME_MIN_WORDS", "500"))
@@ -98,6 +99,14 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0) -> l
         issues.append("Remove fabricated or unverified real-world scholarship from this fictional canon.")
     if re.search(r"(?i)\b(?:chapters?|cap[ií]tulos?)\s+\d+\s*[-–—]\s*\d+", text):
         issues.append("Remove numbered chapter ranges; chapter planning happens only after the audited vault exists.")
+    if re.search(
+        r"(?i)\b(?:no cumplir con|do not comply with|ignorar|ignore)\s+(?:la\s+|the\s+)?"
+        r"(?:pol[ií]tica|policy|instrucciones?|instructions?)\b",
+        text,
+    ):
+        issues.append("Remove instructions that negate editorial, factuality, citation, or system policy.")
+    if language:
+        issues.extend(language_quality_issues(text, language))
     if is_fiction(genre) and volume_index == 1:
         misplaced_headings = re.findall(
             r"(?im)^#{2,4}\s+.*(?:"
@@ -112,6 +121,25 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0) -> l
                 "Keep foundation volume 1 within editorial scope: defer named cast, technology/law ledgers, "
                 "history, timelines, source apparatus, and narrative devices to their assigned later volumes."
             )
+        scope_blocks = re.findall(
+            r"(?im)^#{2,4}\s+.*(?:cronolog[ií]a|chronology|notas? de construcci[oó]n|"
+            r"construction notes?|objetos? clave|key objects?|organizaciones?|organizations?|"
+            r"relaciones? temporales?|temporal relations?|sistema estelar|stellar system|"
+            r"tecnolog[ií]a|technology)\b|"
+            r"^\s*(?:[-*]\s+|\d+\.\s+)?\*\*(?:arquetipos?|archetypes?|objetos? clave|"
+            r"key objects?|organizaciones?|organizations?|relaciones? temporales?|temporal relations?)\*\*",
+            text,
+        )
+        cast_table = re.search(
+            r"(?im)^\|\s*(?:personaje|character)\s*\|\s*(?:rol|role)\s*\|",
+            text,
+        )
+        if scope_blocks or cast_table:
+            issues.append(
+                "Foundation volume 1 contains encyclopedia/story material. Keep only premise, reader promise, "
+                "themes, tone, high-level boundaries, and open questions; defer cast tables, detailed systems, "
+                "chronology, objects, organizations, and construction notes."
+            )
         measurements = re.findall(
             r"(?i)\b\d+(?:[.,]\d+)?\s*(?:km|cm|kg|kelvin|°c|tw|gw|mw|kw|urc|years?|a[nñ]os?)\b",
             text,
@@ -120,6 +148,35 @@ def _static_bible_issues(candidate: str, genre: str, volume_index: int = 0) -> l
             issues.append(
                 "Remove clusters of exact fictional measurements from foundation volume 1; canonize only "
                 "operationally justified values in the world/domain volume."
+            )
+    if is_fiction(genre) and volume_index == 2:
+        issues.extend(_relationship_consistency_issues(text))
+    return issues
+
+
+def _relationship_consistency_issues(text: str) -> list[str]:
+    """Flag ambiguous shared parent claims unless the relationship is made explicit."""
+    headings = list(re.finditer(r"(?im)^##\s+([^\n]+)", text))
+    claims: dict[str, set[str]] = {}
+    name = r"(?:\*\*)?([A-ZÁÉÍÓÚÜÑ][\wÁÉÍÓÚÜÑáéíóúüñ'’-]+)(?:\*\*)?"
+    patterns = (
+        rf"(?i)(?:su|his|her)\s+(?:padre|father|madre|mother)[,:]?\s+{name}",
+        rf"(?i){name}\s*,\s+(?:su|his|her)\s+(?:padre|father|madre|mother)",
+    )
+    for index, heading in enumerate(headings):
+        raw_subject = re.sub(r"[*_#]", "", heading.group(1)).strip()
+        subject = re.split(r"\s+[-–—:]\s+", raw_subject, maxsplit=1)[0].strip()
+        body_end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
+        body = text[heading.end():body_end]
+        for pattern in patterns:
+            for parent in re.findall(pattern, body):
+                claims.setdefault(_entity_key(parent), set()).add(subject)
+    issues = []
+    for parent, subjects in claims.items():
+        if len(subjects) > 1 and not re.search(r"(?i)\b(?:herman[oa]s?|siblings?)\b", text):
+            issues.append(
+                f"Parent identity '{parent}' is claimed by multiple character sections ({', '.join(sorted(subjects))}) "
+                "without an explicit sibling/shared-parent relationship; clarify the kinship or correct the pronoun."
             )
     return issues
 
@@ -246,7 +303,7 @@ chapters or write finished book prose. Do not emit Obsidian wikilinks; applicati
 whose target notes exist.
 Stay inside this volume's required coverage. Do not pull forward material assigned to another
 volume merely to increase length. In the creative/editorial foundation, define role requirements
-without naming a cast and preserve world mechanisms, measurements, history, chronology, objects,
+without inventing a named cast beyond names explicitly supplied by the user or live guidance, and preserve world mechanisms, measurements, history, chronology, objects,
 organizations, and narrative architecture for their dedicated later volumes.
 {language_instruction}
 
@@ -360,6 +417,8 @@ Preserve valid detail and established canon, remove unsupported claims rather th
 and reconcile contradictions explicitly. Do not add chapter or act numbering, bibliography,
 citations, Obsidian links, a duplicate book title, or a volume-number heading. Return only the full
 replacement body with descriptive ## and ### Markdown headings.
+When an issue says material belongs to another volume, delete that entire out-of-scope block instead
+of merely removing its measurements or renaming its heading. Never retain text that negates policy.
 {language_instruction}
 
 Expected volume {volume_index} of {volume_total}: {volume_name}
@@ -420,7 +479,7 @@ class BookBibleChain:
                       prior, language, on_quality) -> str:
         max_repairs = max(1, int(os.getenv("BIBLE_QUALITY_MAX_REPAIRS", "2")))
         for cycle in range(max_repairs + 1):
-            deterministic = _static_bible_issues(candidate, genre, index)
+            deterministic = _static_bible_issues(candidate, genre, index, language)
             if deterministic:
                 audit = {
                     "verdict": "repair",

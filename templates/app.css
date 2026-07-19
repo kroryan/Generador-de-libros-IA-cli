@@ -377,28 +377,106 @@ button:disabled {
     text-shadow: 0 1px 2px #000000;
 }
 
-.terminal {
-    height: min(54vh, 520px);
-    min-height: 300px;
+.activity-table {
     margin: 0 16px 16px;
-    overflow: auto;
+    overflow: hidden;
     border: 1px solid #24483e;
     border-radius: 4px;
     background: rgba(3, 8, 7, 0.94);
-    padding: 12px;
+}
+
+.activity-header,
+.activity-row {
+    display: grid;
+    grid-template-columns: 78px 78px 82px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+}
+
+.activity-header {
+    padding: 8px 10px;
+    border-bottom: 1px solid #24483e;
+    background: #0b1714;
+    color: var(--muted);
+    font-size: 0.65rem;
+    font-weight: 700;
+}
+
+.activity-log {
+    height: clamp(320px, 54vh, 560px);
+    min-height: 300px;
+    overflow: auto;
+    overscroll-behavior: contain;
     color: #b8c7c0;
     font-size: 0.76rem;
+    scrollbar-gutter: stable;
 }
 
-.log-line {
-    margin: 0 0 7px;
+.activity-row {
+    min-height: 38px;
+    padding: 9px 10px;
+    border-bottom: 1px solid rgba(36, 72, 62, 0.58);
+}
+
+.activity-row:nth-child(even) {
+    background: rgba(72, 201, 216, 0.025);
+}
+
+.activity-row:last-child {
+    border-bottom: 0;
+}
+
+.activity-time,
+.activity-source,
+.activity-kind {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.68rem;
+    line-height: 1.55;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-source,
+.activity-kind {
+    text-transform: uppercase;
+}
+
+.activity-kind {
+    color: var(--cyan);
+}
+
+.activity-message {
+    min-width: 0;
     overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
-.log-line::before {
-    margin-right: 7px;
+.activity-message::before {
+    margin-right: 6px;
     color: var(--green);
     content: ">";
+}
+
+.activity-details {
+    display: inline;
+}
+
+.activity-details summary {
+    display: inline;
+    color: inherit;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.activity-details pre {
+    max-width: 100%;
+    margin: 9px 0 2px;
+    overflow-wrap: anywhere;
+    color: #d8e9e1;
+    font: inherit;
+    line-height: 1.55;
+    white-space: pre-wrap;
 }
 
 .log-error {
@@ -410,9 +488,8 @@ button:disabled {
     color: #7fa99b;
 }
 
-.log-output {
+.log-output .activity-message {
     color: #d8e9e1;
-    white-space: pre-wrap;
 }
 
 .log-reasoning,
@@ -608,7 +685,7 @@ button:disabled {
         grid-template-columns: 1fr;
     }
 
-    .terminal {
+    .activity-log {
         height: 360px;
     }
 }
@@ -632,6 +709,17 @@ button:disabled {
 
     .guidance-form {
         grid-template-columns: 1fr;
+    }
+
+    .activity-header,
+    .activity-row {
+        grid-template-columns: 66px 62px minmax(0, 1fr);
+        gap: 8px;
+    }
+
+    .activity-header span:nth-child(3),
+    .activity-row .activity-kind {
+        display: none;
     }
 
     .status-cell {

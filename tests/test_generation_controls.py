@@ -135,10 +135,26 @@ def test_framework_rejects_named_cast_hidden_in_role_requirements():
         "## **4. Requisitos iniciales de roles de personajes**  \n"
         "| Rol | Funcion |\n|---|---|\n"
         "| **Elias Varga** (protagonista) | Ingeniero dividido entre dos tradiciones. |\n"
+        "| **Liora Venn** | Ingeniera de la nave. |\n"
         "## Preguntas tematicas\n" + "pregunta abierta " * 190
     )
     issues = _framework_issues(bad, "Fantasia cientifica")
-    assert any("unnamed functions" in issue for issue in issues)
+    assert any("must not invent a named cast" in issue for issue in issues)
+
+
+def test_framework_rejects_observed_reversed_role_heading_and_language_leaks():
+    bad = (
+        "## Requisitos Iniciales de Personaje y Roles\n"
+        "| Personaje | Rol |\n|---|---|\n"
+        "| **Alfredo** | Protagonista |\n| **Liora** | Ingeniera |\n| **Merik** | Lider |\n"
+        "## Promesa\n- **Imersion sensorial** completa.\n"
+        "## Tensiones\n- **Loyalty vs. Destiny** domina el conflicto.\n"
+        "## Estilo\n- **Pacing** alternado.\n" + "detalle " * 190
+    )
+    issues = _framework_issues(bad, "Fantasia cientifica", "es")
+    assert any("must not invent a named cast" in issue for issue in issues)
+    assert any("English labels" in issue for issue in issues)
+    assert any("Inmersión" in issue for issue in issues)
 
 
 def test_static_bible_gate_catches_observed_volume_and_source_failures(monkeypatch):
@@ -164,6 +180,36 @@ def test_foundation_gate_rejects_observed_scope_drift_and_fake_precision(monkeyp
     issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1)
     assert any("editorial scope" in issue for issue in issues)
     assert any("exact fictional measurements" in issue for issue in issues)
+
+
+def test_foundation_gate_rejects_repaired_scope_drift_policy_negation_and_language(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Premisa\nAlfredo debe elegir entre dos tradiciones.\n"
+        "## Limites y reglas del mundo\n### Tecnologia\nSe detallan motores y escudos.\n"
+        "## Notas de construccion para el agente\n"
+        "1. **Objetos clave**: artefacto y escudo.\n"
+        "2. **Organizaciones**: Orden y Consorcio.\n"
+        "3. **Relaciones temporales**: el viaje dura varios anos.\n"
+        "## Estilo\n**Pacing** alternado e **Imersion** sensorial.\n"
+        "- No cumplir con la politica de citas reales.\n"
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=1, language="es")
+    assert any("encyclopedia/story material" in issue for issue in issues)
+    assert any("negate" in issue for issue in issues)
+    assert any("English labels" in issue for issue in issues)
+    assert any("Inmersión" in issue for issue in issues)
+
+
+def test_people_volume_flags_ambiguous_shared_parent_claim(monkeypatch):
+    monkeypatch.setenv("BIBLE_VOLUME_MIN_WORDS", "10")
+    candidate = (
+        "## Alfredo - El astromago\nSu padre, **Jorlan**, fue asesinado por Eris.\n"
+        "## Eris - El renegado\nEl asesinato de Jorlan, su padre, lo marco profundamente.\n"
+        + "detalle " * 20
+    )
+    issues = _static_bible_issues(candidate, "Fantasia cientifica", volume_index=2, language="es")
+    assert any("shared-parent relationship" in issue for issue in issues)
 
 
 def test_bible_quality_gate_repairs_before_accepting(monkeypatch):

@@ -189,7 +189,7 @@ class BookGenerationPipeline:
             project = ObsidianVaultWriter().create(
                 output_directory=output_path, vault_root=workspace.root, title=title,
                 language=language, metadata=request_data, framework=framework,
-                book_bible="",
+                book_bible="", progressive=True,
             )
             workspace.update(status="running", current_stage="book_bible", vault_path=".")
 

@@ -18,7 +18,7 @@ and prevents later exports from drifting away from the chapter files.
 The generation sequence is:
 
 1. Create an isolated project and generate only the title and foundational framework
-2. Materialize the visible Obsidian vault and its structural notes immediately
+2. Materialize the visible Obsidian vault with the generated framework, without empty notes
 3. Build, audit, repair, and visibly save six substantial canonical bible volumes one by one
 4. Extract, audit, and repair characters, locations, organizations, objects, concepts, and events
 5. Merge names and aliases into one canonical entity registry and validate every graph link
@@ -61,6 +61,9 @@ Every bible volume and wiki domain must pass deterministic checks plus an indepe
 continuity/taxonomy audit. Deterministic scope blockers trigger repair before another audit call,
 so obvious failures do not waste context on a contradictory verdict. Failed candidates are saved in `.bookgen/checkpoints/`, repaired up
 to the configured limit, and never become canon while critical issues remain.
+High-confidence checks also reject wrong-language labels, policy-negating instructions, misplaced
+encyclopedia material, unsupported precision, and ambiguous relationship claims observed during
+live generation audits.
 
 ## Installation
 
@@ -131,6 +134,10 @@ examples, styles, genres, controls, and status text. The choice is persisted in 
 restored into both the visible control and generation payload, and never inferred from stale
 visual form state. Only one generation runs at a time.
 
+The progress history is a bounded, four-column activity table with its own scroll. Long model
+responses are collapsed per event and can be expanded in place; wrapped text remains inside the
+message column, and new events do not force the view to the bottom while the user is reading older rows.
+
 The provider and model selectors are independent. The provider manager can add, test, and
 remove OpenAI-compatible or native Anthropic API endpoints. API keys are stored locally in
 `.bookgen/providers.json` with `0600` permissions and are never returned to the browser.
@@ -198,9 +205,12 @@ books/<timestamp>-<premise>/
 ```
 
 Each model result is checkpointed immediately under `.bookgen/checkpoints/`. The visible vault
-exists as soon as the framework is ready, and every accepted bible volume is written at once to
+exists as soon as the framework is ready, initially containing the actual generated framework rather
+than empty wiki/control notes. Every accepted bible volume is written at once to
 `01 - Story Core/`; users can inspect partial canonical work before the remaining volumes finish.
 Appending a later volume does not rewrite an existing volume note, so direct user edits remain intact.
+Wiki category indexes and manuscript indexes are created only when their first real entity or plan
+exists; ungenerated sections remain absent instead of appearing as empty files.
 Bible text exists once in its six canonical volume notes; portals and indices link to it rather
 than copying it. A later provider or server failure therefore does not discard completed work.
 Codex and Claude Code are launched with this project as their working directory.

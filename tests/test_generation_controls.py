@@ -262,12 +262,13 @@ def test_framework_quality_uses_bounded_second_repair_and_reports_each_cycle(mon
     reports = []
     with patch("utils.get_llm_model", return_value=FakeListLLM(responses=[first, second, accepted])), patch(
         "structure.FrameworkQualityAuditChain.run", return_value={"verdict": "pass", "issues": []}
-    ):
+    ) as audit:
         result = FrameworkChain().run(
             "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
             on_quality=lambda cycle, report, candidate: reports.append((cycle, report, candidate)),
         )
     assert result == accepted.strip()
+    assert audit.call_count == 3
     assert [report["passed"] for _, report, _ in reports] == [False, False, True]
 
 
@@ -345,6 +346,15 @@ def test_framework_allows_negative_ending_reference_and_complete_arc_promise():
     assert not any("culminates" in issue for issue in issues)
 
 
+def test_framework_allows_negative_climax_boundary():
+    candidate = (
+        "## Límites de estilo\nLa trama causal conecta los eventos sin recurrir a estructuras de clímax predefinidas.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert not any("story architecture" in issue for issue in issues)
+
+
 def test_framework_allows_observed_generic_role_labels():
     candidate = (
         "## Requisitos iniciales de personajes y roles\n"
@@ -354,10 +364,19 @@ def test_framework_allows_observed_generic_role_labels():
         "- **Cartógrafo de sistemas**: formula requisitos de navegación.\n"
         "- **Historiador mágico**: conserva preguntas sobre el pasado.\n"
         "- **Guía de campo**: define riesgos que la biblia resolverá.\n"
+        "- **Guardia de seguridad**: plantea necesidades de protección.\n"
+        "- **Sabio de la tradición**: conserva preguntas históricas.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
     assert not any("named cast" in issue for issue in issues)
+
+
+def test_spanish_framework_flags_portuguese_sabio_spelling():
+    candidate = "## Roles\n- **Sábio de la tradición**: conserva el conocimiento.\n" + "detalle " * 190
+    issues = _framework_issues(candidate, "Fantasia cientifica", "es")
+    assert not any("named cast" in issue for issue in issues)
+    assert any("Sábio/Sábia" in issue for issue in issues)
 
 
 def test_framework_rejects_observed_unsupported_artifact_portals_and_named_laws():
@@ -396,6 +415,28 @@ def test_framework_semantic_audit_repairs_unsupported_character_canon(monkeypatc
     assert result == accepted
     assert "quantum physicist" in reports[0]["issues"][0]
     assert [report["passed"] for report in reports] == [False, True]
+
+
+def test_framework_quality_report_combines_deterministic_and_semantic_issues(monkeypatch):
+    monkeypatch.setenv("FRAMEWORK_QUALITY_MAX_REPAIRS", "1")
+    first = "## Roles\nAliado sin nombre definido.\n" + "detalle " * 190
+    accepted = "## Roles\nAliado funcional planteado como requisito abierto.\n" + "detalle " * 190
+    audits = [
+        {"verdict": "repair", "issues": [{"problem": "Unsupported character rank.", "repair": "Remove it."}]},
+        {"verdict": "pass", "issues": []},
+    ]
+    reports = []
+    with patch.object(FrameworkChain, "invoke", side_effect=[first, accepted]), patch(
+        "structure.guidance_manager.context", return_value=""
+    ), patch("structure.FrameworkQualityAuditChain.run", side_effect=audits):
+        result = FrameworkChain().run(
+            "Tema", "Fantasia cientifica", "Epico", "Adultos", "Titulo", "es",
+            on_quality=lambda cycle, report, candidate: reports.append(report),
+        )
+    assert result == accepted
+    assert any("placeholder phrases" in issue for issue in reports[0]["deterministic_issues"])
+    assert any("Unsupported character rank" in issue for issue in reports[0]["issues"])
+    assert reports[0]["audit"]["verdict"] == "repair"
 
 
 def test_framework_semantic_auditor_accepts_strict_json():

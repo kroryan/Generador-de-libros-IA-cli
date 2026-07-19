@@ -70,6 +70,8 @@ def language_quality_issues(text: str, language: str | None) -> list[str]:
             issues.append("Correct the Spanish spelling 'Imersión' to 'Inmersión'.")
         if re.search(r"(?i)\bconflitos?\b", value):
             issues.append("Replace the Portuguese word 'Conflito' with the Spanish 'Conflicto'.")
+        if re.search(r"(?i)\bsábi[oa]s?\b", value):
+            issues.append("Replace the Portuguese word 'Sábio/Sábia' with the Spanish 'Sabio/Sabia'.")
     elif re.search(
         r"(?i)\b(?:promesa al lector|personajes principales|pregunta dram[aá]tica|"
         r"ritmo narrativo|fantas[ií]a cient[ií]fica)\b",

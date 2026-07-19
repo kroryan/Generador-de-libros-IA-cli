@@ -180,15 +180,9 @@ Book framework:
                 language,
                 user_context=user_context,
             )
-            if deterministic:
-                audit = {
-                    "verdict": "repair", "issues": [],
-                    "skipped": "Deterministic blockers must be repaired before semantic auditing.",
-                }
-            else:
-                audit = FrameworkQualityAuditChain().run(
-                    subject, genre, style, profile, guidance_for_audit, result, language,
-                )
+            audit = FrameworkQualityAuditChain().run(
+                subject, genre, style, profile, guidance_for_audit, result, language,
+            )
             audit_issues = [_framework_audit_issue(item) for item in audit.get("issues", [])]
             issues = list(dict.fromkeys([*deterministic, *audit_issues]))
             guidance_after = guidance_manager.context()
@@ -262,6 +256,14 @@ def _framework_issues(
         "",
         text,
     )
+    story_architecture_text = re.sub(
+        r"(?i)\b(?:sin\s+(?:recurrir|apelar)\s+a|without\s+(?:using\s+|relying\s+on\s+)?)\s*"
+        r"(?:predefinid[oa]s?\s+|predefined\s+)?"
+        r"(?:(?:estructuras?|structures?|beats?)\s+(?:de|of)\s+)?"
+        r"(?:climax|cl[ií]max)(?:\s+(?:predefinid[oa]s?|predefined|structures?|beats?))?\b",
+        "",
+        story_architecture_text,
+    )
     if is_fiction(genre) and re.search(
         r"(?i)\b(?:climax|cl[ií]max|resolution|resoluci[oó]n|ending|desenlace)\b",
         story_architecture_text,
@@ -305,9 +307,9 @@ def _framework_issues(
     generic_role = re.compile(
         r"(?i)^(?:(?:el|la|los|las|un|una)\s+)?(?:protagonistas?|antagonistas?|mentor(?:a|es|as)?|"
         r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
-        r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardi(?:a|á)n(?:es)?|capit[aá]n(?:es)?|"
+        r"magos?|brujas?|navegantes?|mec[aá]nic[oa]s?|guardias?|guardi[aá]n(?:es)?|capit[aá]n(?:es)?|"
         r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
-        r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|"
+        r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|s[aá]bi[oa]s?|"
         r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [

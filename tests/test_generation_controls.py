@@ -368,10 +368,27 @@ def test_framework_allows_observed_generic_role_labels():
         "- **Sabio de la tradición**: conserva preguntas históricas.\n"
         "- **Hermano de Jacobs**: relación aportada por la guía.\n"
         "- **Compañeros de la expedición**: requisitos colectivos.\n"
+        "- **Autoridades**: requisitos institucionales abiertos.\n"
+        "- **Comités de regulación**: grupos todavía no canonizados.\n"
         + "detalle " * 190
     )
     issues = _framework_issues(candidate, "Fantasia cientifica", "es")
     assert not any("named cast" in issue for issue in issues)
+
+
+def test_framework_matches_user_names_without_accent_sensitivity():
+    candidate = (
+        "## Requisitos iniciales de personajes y roles\n"
+        "- **Héctor**: protagonista aportado por el usuario.\n"
+        "## Límites del mundo\nLa nave *Águila* aparece en la petición.\n"
+        + "detalle " * 190
+    )
+    issues = _framework_issues(
+        candidate, "Fantasia cientifica", "es",
+        user_context="El protagonista se llama hector y viaja en la nave Aguila.",
+    )
+    assert not any("named cast" in issue for issue in issues)
+    assert not any("named world entities" in issue for issue in issues)
 
 
 def test_spanish_framework_flags_portuguese_sabio_spelling():

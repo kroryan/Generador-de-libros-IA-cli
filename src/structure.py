@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import unicodedata
 
 from editorial_policy import editorial_policy, is_fiction
 from guidance import guidance_manager
@@ -57,6 +58,11 @@ def _framework_audit_issue(item: object) -> str:
     problem = str(item.get("problem") or item).strip()
     repair = str(item.get("repair", "")).strip()
     return f"{problem} Required repair: {repair}" if repair else problem
+
+
+def _canonical_lookup_text(value: object) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value).casefold())
+    return "".join(character for character in normalized if not unicodedata.combining(character))
 
 
 class FrameworkQualityAuditChain(BaseStructureChain):
@@ -315,7 +321,7 @@ def _framework_issues(
         r"(?im)^\s*[-*]\s+\*\*([^*]+)\*\*",
         role_section.group(1) if role_section else "",
     ))
-    source = str(user_context).casefold()
+    source = _canonical_lookup_text(user_context)
     generic_role = re.compile(
         r"(?i)^(?:(?:el|la|los|las|un|una)\s+)?(?:protagonistas?|antagonistas?|mentor(?:a|es|as)?|"
         r"rivales?|aliad[oa]s?|equipos?|tripulaci[oó]n|cient[ií]fic[oa]s?|hechicer[oa]s?|"
@@ -323,12 +329,13 @@ def _framework_issues(
         r"ingenier[oa]s?|coordinador(?:a|es|as)?|maestr[oa]s?|explorador(?:a|es|as)?|"
         r"cart[oó]graf[oa]s?|historiador(?:a|es|as)?|gu[ií]as?|s[aá]bi[oa]s?|"
         r"herman[oa]s?(?:\s+de\b.*)?|compa[nñ]er[oa]s?(?:\s+de\b.*)?|"
+        r"autoridades?|comit[eé]s?(?:\s+de\b.*)?|"
         r"aprendices?|voces?|figuras?|entidades?|especialistas?)(?:\b.*)?$"
     )
     invented_role_names = [
         name.strip()
         for name in named_role_rows
-        if name.strip().casefold() not in source and not generic_role.match(name.strip())
+        if _canonical_lookup_text(name.strip()) not in source and not generic_role.match(name.strip())
     ]
     if is_fiction(genre) and invented_role_names:
         issues.append(
@@ -381,7 +388,7 @@ def _framework_issues(
         for pattern in entity_patterns:
             for match in pattern.finditer(text):
                 name = match.group(1).strip("*_ ")
-                if name.casefold() not in source:
+                if _canonical_lookup_text(name) not in source:
                     invented_entities.append(name)
         if invented_entities:
             issues.append(
